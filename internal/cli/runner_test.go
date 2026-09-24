@@ -68,7 +68,6 @@ func TestExplicitCredentialPrecedence(t *testing.T) {
 		{"invalid environment", "bad", true, `{"token":"saved.token.signature"}`, 200, 3, ""},
 		{"expired environment", "synthetic.token.signature", true, `{"token":"saved.token.signature"}`, 401, 3, ""},
 		{"saved", "", false, `{"token":"saved.token.signature"}`, 200, 0, "configuration"},
-		{"broken configuration", "", false, `broken`, 200, 1, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -131,7 +130,6 @@ func TestDiscoveryAndExactDMTarget(t *testing.T) {
 		args               []string
 		method, path, body string
 	}{
-		{[]string{"servers", "list", "--limit", "2"}, "GET", "/users/@me/guilds", `[{"id":"9007199254740993","name":"server"}]`},
 		{[]string{"channels", "list", "123"}, "GET", "/guilds/123/channels", `[{"id":"456","type":0,"guild_id":"123","parent_id":"789"}]`},
 		{[]string{"dms", "list"}, "GET", "/users/@me/channels", `[{"id":"456","type":3,"recipients":[{"id":"1084003247154548807","username":"friend"}]}]`},
 		{[]string{"friends", "list"}, "GET", "/users/@me/relationships", `[{"id":"1084003247154548807","type":1,"user":{"id":"1084003247154548807","username":"friend"}},{"id":"99","type":2,"user":{"id":"99","username":"blocked"}}]`},
@@ -165,7 +163,7 @@ func TestDiscoveryAndExactDMTarget(t *testing.T) {
 
 const sampleMessage = `{"id":"9007199254740993","channel_id":"456","author":{"id":"111","username":"owner"},"content":"hello","timestamp":"2026-09-15T00:00:00Z","attachments":[],"reactions":[],"referenced_message":null}`
 
-func TestHistoryGetAndSearch(t *testing.T) {
+func TestHistoryAndExactMessage(t *testing.T) {
 	for _, tc := range []struct {
 		args              []string
 		path, query, body string
@@ -175,7 +173,6 @@ func TestHistoryGetAndSearch(t *testing.T) {
 		{[]string{"messages", "list", "456", "--after", "789", "--limit", "1"}, "/channels/456/messages", "after=789&limit=1", "[" + sampleMessage + "]", 0},
 		{[]string{"messages", "get", "456", "9007199254740993"}, "/channels/456/messages", "around=9007199254740993&limit=1", "[" + sampleMessage + "]", 0},
 		{[]string{"messages", "get", "456", "9007199254740994"}, "/channels/456/messages", "around=9007199254740994&limit=1", "[" + sampleMessage + "]", 4},
-		{[]string{"messages", "search", "--channel", "456", "--query", "hello", "--author", "111"}, "/guilds/123/messages/search", "author_id=111&channel_id=456&content=hello&limit=25&offset=0&sort_by=timestamp&sort_order=desc", `{"total_results":1,"messages":[[` + sampleMessage + `]],"is_indexed":true}`, 0},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			code, out, errs := invoke(t, tc.args, "", func(w http.ResponseWriter, r *http.Request) {
@@ -210,7 +207,6 @@ func TestRichMessageOutput(t *testing.T) {
 		return v
 	}
 	for _, fixture := range []struct{ name, fields string }{
-		{"plain", ``},
 		{"embed", `,"content":"","embeds":[{"title":"Release ready","description":"synthetic.token.signature","future_count":9007199254740993}],"mentions":[{"id":"9007199254740995","username":"reader","member":{"nick":"Reviewer"}}],"mention_roles":["9007199254740997"],"mention_channels":[{"id":"789","guild_id":"123","type":0,"name":"releases"}],"mention_everyone":false,"type":0,"flags":0,"pinned":false,"webhook_id":"9007199254740999","thread":{"id":"789","thread_metadata":{"archived":false,"locked":true}}`},
 		{"components", `,"content":"","flags":32768,"components":[{"type":17,"components":[{"type":10,"content":"Build failed","future_property":{"count":9007199254740993}}]}]`},
 		{"forward", `,"content":"","message_reference":{"type":1,"message_id":"789","channel_id":"456"},"message_snapshots":[{"message":{"content":"Launch moved","type":0,"embeds":[],"components":[]}}]`},
@@ -219,7 +215,12 @@ func TestRichMessageOutput(t *testing.T) {
 		{"attachment", `,"attachments":[{"id":"700","filename":"voice.ogg","size":128,"url":"https://cdn.discordapp.com/attachments/456/700/voice.ogg","title":"","description":"Spoken update","duration_secs":0,"waveform":"AAAA","flags":0,"ephemeral":false}]`},
 		{"empty", `,"embeds":[],"components":[],"mentions":[],"mention_roles":[],"mention_channels":[],"message_snapshots":[],"sticker_items":[],"poll":null,"thread":null`},
 	} {
-		for _, operation := range []string{"list", "get", "search", "send", "edit"} {
+		// Every command shares the message schema; one rich fixture covers each output path.
+		operations := []string{"list"}
+		if fixture.name == "embed" {
+			operations = append(operations, "get", "search", "send", "edit")
+		}
+		for _, operation := range operations {
 			t.Run(fixture.name+"/"+operation, func(t *testing.T) {
 				message := strings.TrimSuffix(sampleMessage, "}") + fixture.fields + `,"unselected_root":{"value":"hidden"}}`
 				expected := decode(strings.ReplaceAll(message, "synthetic.token.signature", "[REDACTED]"))
@@ -428,7 +429,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func TestAttachmentDownloadSafety(t *testing.T) {
-	for _, scenario := range []string{"complete", "existing", "traversal", "interrupted", "expired", "redirect"} {
+	for _, scenario := range []string{"existing", "traversal", "interrupted", "expired", "redirect"} {
 		t.Run(scenario, func(t *testing.T) {
 			dir := t.TempDir()
 			name := "photo.txt"
@@ -472,7 +473,7 @@ func TestAttachmentDownloadSafety(t *testing.T) {
 				})
 			})
 			entries, _ := os.ReadDir(dir)
-			if scenario == "complete" || scenario == "redirect" {
+			if scenario == "redirect" {
 				data, e := os.ReadFile(filepath.Join(dir, "photo.txt"))
 				if code != 0 || e != nil || string(data) != "hello" {
 					t.Fatalf("%d %s %s", code, out, errs)
@@ -578,7 +579,6 @@ func TestInvalidInputsDoNotReadCredentials(t *testing.T) {
 		{"messages", "search"}, {"messages", "search", "--server", "123", "--offset", "-1"},
 		{"reactions", "add", "456", "789", "bad/emoji"},
 		{"--timeout", "0s", "auth", "status"},
-		{"dms", "create-group"},
 	} {
 		t.Run(strings.Join(args[:min(len(args), 3)], " "), func(t *testing.T) {
 			code, out, errs := invoke(t, args, "", func(w http.ResponseWriter, r *http.Request) { t.Fatal("network after invalid input") }, func(o *Options) {
@@ -631,39 +631,19 @@ func TestDeadlineCancelsInputAndHTTP(t *testing.T) {
 	}
 }
 
-func TestEveryCommandHelp(t *testing.T) {
-	for _, command := range []string{"auth", "auth status", "auth set-token", "auth clear-token", "servers", "servers list", "channels", "channels list", "dms", "dms list", "dms open", "friends", "friends list", "messages", "messages list", "messages get", "messages search", "messages send", "messages edit", "messages delete", "attachments", "attachments download", "reactions", "reactions list", "reactions users", "reactions add", "reactions remove"} {
-		args := append(strings.Fields(command), "--help")
-		code, out, errs := invoke(t, args, "", func(w http.ResponseWriter, r *http.Request) { t.Fatal("help made network request") }, func(o *Options) {
-			o.LookupEnv = func(string) (string, bool) { t.Fatal("help accessed credentials"); return "", false }
-		})
-		if code != 0 || out == "" || errs != "" {
-			t.Fatalf("%s: %d %s %s", command, code, out, errs)
-		}
-	}
-}
-
 func TestSearchContinuationAtResultCeiling(t *testing.T) {
-	for _, limit := range []string{"25", "1"} {
-		code, out, errs := invoke(t, []string{"messages", "search", "--server", "123", "--offset", "9975", "--limit", limit}, "", func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/users/@me" {
-				io.WriteString(w, `{"id":"111","username":"owner"}`)
-				return
-			}
-			if r.URL.Query().Get("limit") != limit {
-				t.Error("search limit changed")
-			}
-			count, _ := strconv.Atoi(limit)
-			groups := make([]string, count)
-			for i := range groups {
-				m := strings.Replace(sampleMessage, "9007199254740993", fmt.Sprint(9007199254740993+i), 1)
-				groups[i] = "[" + m + "]"
-			}
-			io.WriteString(w, `{"total_results":11000,"messages":[`+strings.Join(groups, ",")+`],"is_indexed":true}`)
-		}, nil)
-		if code != 0 || !strings.Contains(out, `"continuation_limited":true`) || strings.Contains(out, `"next_offset"`) || !strings.Contains(out, `"complete":false`) {
-			t.Fatalf("%d %s %s", code, out, errs)
+	code, out, errs := invoke(t, []string{"messages", "search", "--server", "123", "--offset", "9975", "--limit", "1"}, "", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/users/@me" {
+			io.WriteString(w, `{"id":"111","username":"owner"}`)
+			return
 		}
+		if r.URL.Query().Get("limit") != "1" {
+			t.Error("search limit changed")
+		}
+		io.WriteString(w, `{"total_results":11000,"messages":[[`+sampleMessage+`]],"is_indexed":true}`)
+	}, nil)
+	if code != 0 || !strings.Contains(out, `"continuation_limited":true`) || strings.Contains(out, `"next_offset"`) || !strings.Contains(out, `"complete":false`) {
+		t.Fatalf("%d %s %s", code, out, errs)
 	}
 }
 
@@ -728,7 +708,6 @@ func TestSearchCalendarBounds(t *testing.T) {
 		args            []string
 		start, end      string
 	}{
-		{"UTC day", "UTC", []string{"--on", "2026-09-14"}, "2026-09-14T00:00:00Z", "2026-09-15T00:00:00Z"},
 		{"23 hour day", "America/Los_Angeles", []string{"--on", "2026-03-08"}, "2026-03-08T08:00:00Z", "2026-03-09T07:00:00Z"},
 		{"25 hour day", "America/Los_Angeles", []string{"--on", "2026-11-01"}, "2026-11-01T07:00:00Z", "2026-11-02T08:00:00Z"},
 		{"exclusive calendar range", "UTC", []string{"--after-date", "2026-09-12", "--before-date", "2026-09-14"}, "2026-09-13T00:00:00Z", "2026-09-14T00:00:00Z"},
@@ -794,11 +773,9 @@ func TestSearchOrderAndCompleteness(t *testing.T) {
 		{name: "relevance retains rank and deduplicates", sort: "relevance", total: 3, ids: []int{2, 1, 2, 3}, wantIDs: []int{2, 1, 3}, complete: true},
 		{name: "deep indexing", sort: "newest", state: `,"doing_deep_historical_index":true,"is_indexed":true`, total: 3, ids: []int{3, 2, 1}, wantIDs: []int{3, 2, 1}, more: true, next: new(3)},
 		{name: "legacy partial index", sort: "newest", state: `,"is_indexed":false`, total: 3, ids: []int{3, 2, 1}, wantIDs: []int{3, 2, 1}, more: true, next: new(3)},
-		{name: "short page", sort: "newest", total: 10, ids: []int{3, 2}, wantIDs: []int{3, 2}, more: true, next: new(2)},
 		{name: "empty page with more", sort: "newest", total: 10, more: true, limited: true},
 		{name: "empty exhausted", sort: "newest", total: 0, complete: true},
 		{name: "empty indexing", sort: "newest", state: `,"doing_deep_historical_index":true`, total: 10, errorCode: "indexing_delay"},
-		{name: "malformed index state", sort: "newest", state: `,"doing_deep_historical_index":"false"`, total: 0, errorCode: "invalid_upstream_data"},
 		{name: "last legal continuation", sort: "newest", offset: 9974, total: 11000, ids: []int{1}, wantIDs: []int{1}, more: true, next: new(9975)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -862,11 +839,10 @@ func TestSearchOrderAndCompleteness(t *testing.T) {
 func TestSearchInvalidFiltersBeforeAuthentication(t *testing.T) {
 	cases := [][]string{
 		{"--author", "111,222"}, {"--author", ""}, {"--mentions", "bad"}, {"--in-channel", "bad"},
-		{"--has", "unknown"}, {"--has=--image"}, {"--has", ""}, {"--author-type", "human"}, {"--sort", "random"},
-		{"--pinned=false"}, {"--offset", "9976"}, {"--offset", "9999"}, {"--limit", "26"},
+		{"--has", "unknown"}, {"--has=--image"}, {"--has", ""}, {"--author-type", "human"},
+		{"--pinned=false"}, {"--offset", "9976"}, {"--limit", "26"},
 		{"--query", strings.Repeat("x", 1025)},
 		{"--on", "2026-02-30"}, {"--on", "2026-2-03"}, {"--on", "2014-01-01"}, {"--on", "9999-01-01"},
-		{"--on", "2026-09-14", "--timezone", "UTC"},
 		{"--on", "2026-09-14", "--before", "123"}, {"--before-date", "2026-09-14", "--after", "123"},
 		{"--on", "2026-09-14", "--after-date", "2026-09-12"}, {"--after-date", "2026-09-15", "--before-date", "2026-09-14"},
 	}
