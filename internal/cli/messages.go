@@ -16,16 +16,25 @@ type MessageListCmd struct {
 	Limit   int    `default:"50" help:"Maximum messages, newest first (1–100)."`
 	Before  string `help:"Read older messages before this message ID."`
 	After   string `help:"Read newer messages after this message ID."`
+	Around  string `help:"Read context around this message ID; cannot combine with --before or --after."`
 }
 
 func (c *MessageListCmd) Validate() error {
 	if e := api.RequireIDs(c.Channel); e != nil {
 		return e
 	}
+	if c.Around != "" {
+		if c.Before != "" || c.After != "" {
+			return api.Invalid("choose --before, --after, or --around")
+		}
+		if e := api.RequireIDs(c.Around); e != nil {
+			return e
+		}
+	}
 	return bounds(c.Limit, 100, c.Before, c.After, true)
 }
 func (c *MessageListCmd) Run(ctx *Context) error {
-	v, e := ctx.Client.History(c.Channel, c.Limit, c.Before, c.After)
+	v, e := ctx.Client.History(c.Channel, c.Limit, c.Before, c.After, c.Around)
 	return ctx.Result(v, e)
 }
 

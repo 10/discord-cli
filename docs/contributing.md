@@ -4,12 +4,13 @@
 | --- | --- |
 | `cmd/discord/main.go` | Standard streams, cancellation, process exit |
 | `internal/cli/cli.go` | Kong root, invocation composition, JSON/error output |
-| `internal/cli/{auth,discovery,messages,reactions,attachments}.go` | Command arguments, validation, execution |
+| `internal/cli/{auth,discovery,threads,messages,reactions,attachments}.go` | Command arguments, validation, execution |
 | `internal/api` | Discord HTTP, rate limits, response validation, uploads/downloads |
 | `internal/auth` | Override precedence, current desktop records, native key access |
 | `internal/desktopdb` | LevelDB compatibility and handle cleanup for disposable session copies and synthetic fixtures |
 | `internal/config` | Saved override location, atomic writing, OS permissions |
 | `internal/cli/runner_test.go` | Command-boundary behavior using a local HTTP server |
+| `internal/cli/threads_test.go` | Thread discovery, archive continuation, and around-message context through the command boundary |
 | `internal/cli/desktop_test.go` | Synthetic desktop records through the same boundary |
 | `internal/auth/key_*_test.go` | Native OS operations on synthetic/missing credentials |
 | `internal/cli/live_test.go` | Explicitly opted-in, read-only native acceptance |
@@ -34,6 +35,12 @@ streams and observed HTTP requests. Refactoring internals should preserve it.
 Arikawa's retry count of one means one attempt; zero means unlimited attempts.
 The CLI owns explicit rate-limit and indexing retries within the invocation
 deadline so transport failures cannot silently duplicate a message send.
+
+Thread discovery uses channel search with creation-time sorting and thread-ID
+cursors. The guild-wide active-thread endpoint rejects user sessions with Discord
+code 20002 (bot-only). Archives use timestamps except joined-private archives,
+which use thread IDs. Around-message reads may return one extra item for even
+limits; the CLI caps the window while retaining the anchor if it was returned.
 
 Desktop authentication reads the current token from a disposable LevelDB copy.
 The reader must replay journal records preceding the manifest sequence watermark;

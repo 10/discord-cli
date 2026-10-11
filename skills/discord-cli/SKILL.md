@@ -30,6 +30,8 @@ checkout, rebuild before concluding that a command is unavailable.
    | Destination | Discovery |
    | --- | --- |
    | Server channel | `servers list`, then `channels list SERVER_ID` |
+   | Active thread or forum post | `channels list SERVER_ID`, then `threads list PARENT_CHANNEL_ID` |
+   | Archived thread or forum post | `threads archived PARENT_CHANNEL_ID`; choose `--type public`, `private`, or `joined-private` |
    | Existing DM or group DM | `dms list`; match `recipients` by user ID |
    | Friend's user ID | `friends list` |
    | New one-to-one conversation requested by the user | `dms open USER_ID`; use its returned channel `id` |
@@ -40,8 +42,9 @@ checkout, rebuild before concluding that a command is unavailable.
    Names help discover candidates; all actions use explicit IDs. If the intended
    account or destination is ambiguous, resolve that ambiguity before acting.
 3. Use the selected channel ID for message, attachment, and reaction commands.
-   A known accessible thread is also a destination; category and forum containers
-   are not. Discovery does not open conversations. Open a DM only as part of a
+   Use a discovered thread's `id` as the message destination, rather than its
+   `parent_id`; category and forum containers are not message destinations.
+   Thread discovery never joins or unarchives threads. Open a DM only as part of a
    requested conversation or send.
 
 Completion: the intended account and channel are identified by ID, and the
@@ -53,6 +56,7 @@ not itself request a message or reaction.
 ```sh
 discord messages list CHANNEL_ID --limit 50
 discord messages get CHANNEL_ID MESSAGE_ID
+discord messages list CHANNEL_ID --around MESSAGE_ID --limit 25
 discord messages search --channel CHANNEL_ID --query "release" --author USER_ID
 discord messages search --server SERVER_ID --query "release"
 discord reactions list CHANNEL_ID MESSAGE_ID
@@ -64,8 +68,10 @@ is routed correctly by the CLI; do not supply both. For calendar searches, use
 `--on` or `--before-date`/`--after-date`; dates always use the machine’s local
 timezone. Before/after dates exclude the named day.
 Search/history `--before` and `--after` still take **message IDs**; keep search
-ID bounds separate from dates. History accepts one direction at a time; search
-can use both ID bounds. Use search help for repeatable filter values and sorting.
+ID bounds separate from dates. History accepts one of `--before`, `--after`, or
+`--around`; search can use both ID bounds. `--around` reads surrounding context,
+newest first; use `messages get` when the exact message is required.
+Use search help for repeatable filter values and sorting.
 `--pinned` selects pinned messages; omit it for either state. Explicit false is
 rejected because the live API did not honor it. Message results include author, timestamp,
 reply references, attachment metadata, and reactions. A missing/deleted reply
@@ -74,10 +80,17 @@ reference does not supply the original content. Reads do not download files.
 For more context, keep the scope and filters and use the returned continuation:
 
 - **History:** newest-first `items`; `next_before` reads older messages,
-  `next_after` reads newer ones.
+  `next_after` reads newer ones. Omit `--around` when continuing in either direction.
 - **Servers / reaction users:** ascending IDs; pass `next_after` as `--after`.
 - **Search:** `items` follow the selected `--sort` (default newest); preserve
   the same sort and filters and pass `next_offset` as `--offset`.
+- **Active threads:** descending thread IDs; preserve the parent channel and pass
+  `next_before` as `--before`. This command uses channel search and may have an
+  indexing delay or incomplete page.
+- **Thread archives:** preserve the parent channel and `--type`; pass
+  `next_before` unchanged as `--before`. Public/private cursors are RFC3339 archive
+  timestamps; joined-private cursors are thread IDs. `private` requires Manage
+  Threads; `joined-private` only reads threads the account joined.
 
 Stop when the requested context is sufficient or the chosen page budget is
 reached. `complete:true` describes the page/index state, not exhaustive history;

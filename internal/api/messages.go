@@ -97,7 +97,12 @@ func (c *Client) history(channel string, limit int, before, after, around string
 	if err := c.Request("GET", "/channels/"+channel+"/messages?"+q.Encode(), nil, &items, false); err != nil {
 		return nil, err
 	}
-	if len(items) > limit {
+	maxItems := limit
+	// Discord may include one extra message around an even-sized window.
+	if around != "" && limit%2 == 0 {
+		maxItems++
+	}
+	if len(items) > maxItems {
 		return nil, Upstream()
 	}
 	for _, m := range items {
@@ -110,15 +115,22 @@ func (c *Client) history(channel string, limit int, before, after, around string
 	}
 	return items, nil
 }
-func (c *Client) History(channel string, limit int, before, after string) (any, error) {
+func (c *Client) History(channel string, limit int, before, after, around string) (any, error) {
 	if _, e := c.Channel(channel); e != nil {
 		return nil, e
 	}
-	items, err := c.history(channel, limit, before, after, "")
+	items, err := c.history(channel, limit, before, after, around)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(items, func(i, j int) bool { return lessID(items[j].ID, items[i].ID) })
+	if len(items) > limit {
+		if items[len(items)-1].ID == around {
+			items = items[1:]
+		} else {
+			items = items[:limit]
+		}
+	}
 	p := Page{Items: items, HasMore: len(items) == limit, Complete: true, Order: "newest_first"}
 	if len(items) > 0 {
 		p.NextBefore = items[len(items)-1].ID

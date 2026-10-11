@@ -21,6 +21,7 @@ type Root struct {
 	Reactions   ReactionsCmd   `cmd:"" help:"Inspect, add, and remove message reactions."`
 	Servers     ServersCmd     `cmd:"" help:"Discover accessible servers."`
 	Channels    ChannelsCmd    `cmd:"" help:"Discover server channels."`
+	Threads     ThreadsCmd     `cmd:"" help:"Discover active threads and paginated archives, including forum posts."`
 	Dms         DMsCmd         `cmd:"" help:"Discover private conversations or open an explicit DM."`
 	Friends     FriendsCmd     `cmd:"" help:"Discover friends and their user IDs."`
 

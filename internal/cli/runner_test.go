@@ -32,7 +32,7 @@ func invoke(t *testing.T, args []string, input string, handler http.HandlerFunc,
 }
 
 func TestLocalCommandsAndValidation(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"--version"}, {"messages", "send", "--help"}, {"messages", "get", "invalid", "123"}, {"--token", "a-secret"}} {
+	for _, args := range [][]string{{"--help"}, {"--version"}, {"messages", "send", "--help"}, {"threads", "list", "--help"}, {"threads", "archived", "--help"}, {"messages", "get", "invalid", "123"}, {"--token", "a-secret"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			calls := 0
 			code, out, errs := invoke(t, args, "", func(w http.ResponseWriter, r *http.Request) { calls++ }, func(o *Options) {
@@ -575,6 +575,20 @@ func TestInvalidInputsDoNotReadCredentials(t *testing.T) {
 		{"messages", "send", "456", "--file", "/does-not-exist"},
 		{"messages", "send", "456", "--stdin"},
 		{"messages", "list", "456", "--before", "111", "--after", "222"},
+		{"messages", "list", "456", "--around", "bad"},
+		{"messages", "list", "456", "--around", "111", "--before", "222"},
+		{"messages", "list", "456", "--around", "111", "--after", "222"},
+		{"messages", "list", "456", "--around", "111", "--limit", "0"},
+		{"threads", "list", "bad"},
+		{"threads", "list", "456", "--before", "bad"},
+		{"threads", "list", "456", "--limit", "26"},
+		{"threads", "archived", "bad"},
+		{"threads", "archived", "456", "--limit", "101"},
+		{"threads", "archived", "456", "--limit", "1"},
+		{"threads", "archived", "456", "--before", "123"},
+		{"threads", "archived", "456", "--type", "private", "--before", "2026-02-30T00:00:00Z"},
+		{"threads", "archived", "456", "--type", "joined-private", "--before", "2026-09-14T00:00:00Z"},
+		{"threads", "archived", "456", "--type", "unknown"},
 		{"messages", "search", "--server", "123", "--channel", "456"},
 		{"messages", "search"}, {"messages", "search", "--server", "123", "--offset", "-1"},
 		{"reactions", "add", "456", "789", "bad/emoji"},

@@ -24,6 +24,12 @@ _Avoid_: Room
 A private, one-to-one message channel between two Discord accounts.
 _Avoid_: Private server, group chat
 
+**Thread**:
+A conversation inside a server channel. A forum post is a thread inside a forum channel; use the thread's ID as the message destination.
+
+**Parent channel**:
+The text, announcement, forum, or media channel containing a thread. Its ID scopes thread discovery and archives, rather than messages inside the thread.
+
 **Group DM**:
 A private message channel for a group of Discord accounts, separate from a server.
 _Avoid_: Group server

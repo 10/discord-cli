@@ -30,8 +30,8 @@ message action. Examples use placeholder IDs and illustrative output.
 
 ## Features
 
-- **Find conversations** — list servers, channels, DMs, and friends, or open a one-to-one DM by user ID.
-- **Read and search** — page through history, retrieve an exact message, or filter one server or conversation by text, authors, mentions, content type, author type, pins, and dates.
+- **Find conversations** — list servers, channels, active threads, forum posts, thread archives, DMs, and friends, or open a one-to-one DM by user ID.
+- **Read and search** — page through history, read context around a message, retrieve an exact message, or filter one server or conversation by text, authors, mentions, content type, author type, pins, and dates.
 - **Send and edit** — write text, reply to a message, attach files, and edit or delete messages where permitted.
 - **Reactions** — inspect counts and participants, add emoji, and remove your own or another user's reaction where permitted.
 - **Attachments** — upload explicit files and download selected attachments without overwriting existing files.
@@ -54,18 +54,22 @@ Sign in to the Discord desktop app, then check the account and discover IDs:
 discord auth status
 discord servers list --limit 10
 discord channels list SERVER_ID
+discord threads list CHANNEL_ID --limit 25
+discord threads archived CHANNEL_ID --limit 25
 discord dms list
 discord friends list
 discord messages list CHANNEL_ID --limit 50
 discord messages get CHANNEL_ID MESSAGE_ID
+discord messages list CHANNEL_ID --around MESSAGE_ID --limit 25
 discord messages search --channel CHANNEL_ID --query "release" --limit 25
 discord messages search --server SERVER_ID --author USER_ID --query "release"
 ```
 
 Replace `SERVER_ID`, `CHANNEL_ID`, and other placeholders with IDs returned by
 these commands. Use any command's `--help` for arguments, defaults, and filters.
-Known accessible threads use the same channel-ID commands; categories and forum
-containers cannot be message destinations. Group management is unavailable.
+Discovered threads and forum posts use the same channel-ID message commands;
+categories and forum containers cannot be message destinations. Group management
+is unavailable.
 
 Successful commands print one JSON value on stdout. Lists and search results
 put rows in `items`; IDs stay strings. Errors go to stderr, so results work
@@ -76,6 +80,46 @@ set -o pipefail
 discord messages list CHANNEL_ID --limit 50 |
   jq '.items[] | {id, author: .author.username, content}'
 ```
+
+## Threads and message context
+
+Use `channels list SERVER_ID` to discover parent channels, then
+`threads list CHANNEL_ID` to read one active-thread page, including forum posts
+and accessible private threads, sorted by descending thread ID. The default
+limit is 25 (maximum 25); pass `next_before` as `--before` to continue. Discovery
+stays in that parent channel. The server-wide active-thread API is bot-only, so
+this CLI uses the user-session channel search route, including its bounded
+rate-limit/indexing retries. A short page with outstanding results is incomplete;
+an empty outstanding page has `continuation_limited: true` and no cursor.
+
+`threads archived CHANNEL_ID` reads one public archive page from a parent text,
+announcement, forum, or media channel. Archive limits range from 2 to 100
+(default 50). Select private archives explicitly:
+
+```bash
+discord threads archived CHANNEL_ID --type private --limit 25
+discord threads archived CHANNEL_ID --type joined-private --limit 25
+```
+
+`private` requires Discord's Manage Threads permission; `joined-private` only
+lists private threads the acting account joined. Both apply to parent text
+channels. No discovery command joins, unarchives, or creates threads.
+Results include parent/server IDs, thread metadata, and available owner, count,
+flag, and forum-tag fields.
+
+When `has_more` is true, pass `next_before` unchanged as `--before` with the same
+parent and archive type. Public/private archives sort by archive timestamp,
+newest first, and use RFC3339 timestamp cursors. Joined-private archives sort by
+descending thread ID and use thread-ID cursors. An empty page with more results
+has `continuation_limited: true` and `complete: false`; retry later instead of
+inventing a cursor.
+
+After finding a message, `messages list CHANNEL_ID --around MESSAGE_ID --limit 25`
+reads a window around it, newest first. `--around`, `--before`, and `--after` are
+mutually exclusive. The returned window never exceeds `--limit`. To expand the
+window, omit `--around` and use `next_before` for older messages or `next_after`
+for newer ones. Use `messages get` when the
+exact message itself is required.
 
 ## Search filters
 
@@ -206,11 +250,14 @@ hard links. For a large transfer, increase the total deadline with `--timeout 5m
 | `messages list` | 50 (max 100) | `--before NEXT_BEFORE` for older messages, or `--after NEXT_AFTER` for newer |
 | `messages search` | 25 (max 25) | Same filters and `--offset NEXT_OFFSET` |
 | `reactions users` | 50 (max 100) | `--after NEXT_AFTER` |
+| `threads list` | 25 (max 25) | `--before NEXT_BEFORE` (thread ID) |
+| `threads archived` | 50 (max 100) | Same archive type and `--before NEXT_BEFORE` (timestamp or thread ID, depending on type) |
 
 History returns messages newest first; search defaults to newest first and
 supports `--sort oldest` or `--sort relevance`. Servers and reaction
-participants use ascending IDs. Other discovery lists return one bounded API
-response, sorted by ID.
+participants use ascending IDs. Active and joined-private archived threads use
+descending IDs; public/private archives use descending archive timestamps.
+Channels, DMs, and friends return one bounded API response, sorted by ID.
 
 **Check `has_more` and `complete` even on exit 0.** `has_more` is conservative
 when a page fills its limit. `complete` describes the page or search-index
