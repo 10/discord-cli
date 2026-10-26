@@ -5,6 +5,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,5 +39,32 @@ func TestSpecialAttachmentDoesNotBlock(t *testing.T) {
 		}
 		<-done
 		t.Fatal("special attachment blocked beyond the invocation deadline")
+	}
+}
+
+func TestBatchDownloadCannotEscapeOutputRoot(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "9007199254740993")); err != nil {
+		t.Fatal(err)
+	}
+	cdnCalls := 0
+	code, out, errs := invoke(t, []string{"attachments", "download-many", "456", "9007199254740993", "--dir", dir}, "", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/users/@me":
+			io.WriteString(w, `{"id":"111","username":"owner"}`)
+		case "/channels/456":
+			io.WriteString(w, `{"id":"456","type":1}`)
+		default:
+			io.WriteString(w, "["+strings.Replace(sampleMessage, `"attachments":[]`, `"attachments":[{"id":"700","filename":"image.png","size":5,"url":"https://cdn.discordapp.com/attachments/456/700/image.png"}]`, 1)+"]")
+		}
+	}, func(o *Options) {
+		o.DownloadTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			cdnCalls++
+			return nil, fmt.Errorf("unexpected CDN request")
+		})
+	})
+	files, _ := os.ReadDir(outside)
+	if code != 1 || !strings.Contains(errs, "partial_download") || !strings.Contains(out, "file_error") || cdnCalls != 0 || len(files) != 0 {
+		t.Fatalf("output root escaped: %d %s %s CDN=%d files=%d", code, out, errs, cdnCalls, len(files))
 	}
 }

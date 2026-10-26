@@ -32,9 +32,10 @@ message action. Examples use placeholder IDs and illustrative output.
 
 - **Find conversations** — list servers, channels, active threads, forum posts, thread archives, DMs, and friends, or open a one-to-one DM by user ID.
 - **Read and search** — page through history, read context around a message, retrieve an exact message, or filter one server or conversation by text, authors, mentions, content type, author type, pins, and dates.
+- **Read with agents** — request more messages with `--limit` and render chronological transcripts with explicit coverage.
 - **Send and edit** — write text, reply to a message, attach files, and edit or delete messages where permitted.
 - **Reactions** — inspect counts and participants, add emoji, and remove your own or another user's reaction where permitted.
-- **Attachments** — upload explicit files and download selected attachments without overwriting existing files.
+- **Attachments** — upload explicit files and download selected attachments or batches from explicit messages without overwriting existing files.
 - **Desktop authentication** — use the current session from Discord Stable, PTB, or Canary on macOS and Windows, with optional token overrides.
 
 ## Install
@@ -71,7 +72,7 @@ Discovered threads and forum posts use the same channel-ID message commands;
 categories and forum containers cannot be message destinations. Group management
 is unavailable.
 
-Successful commands print one JSON value on stdout. Lists and search results
+By default, successful commands print one JSON value on stdout. Lists and search results
 put rows in `items`; IDs stay strings. Errors go to stderr, so results work
 directly with `jq`:
 
@@ -80,6 +81,36 @@ set -o pipefail
 discord messages list CHANNEL_ID --limit 50 |
   jq '.items[] | {id, author: .author.username, content}'
 ```
+
+## Agent reading
+
+`messages list` reads up to `--limit` messages, fetching additional pages
+automatically when needed. The default is 50; the maximum is 10,000. Use
+`--before` to continue older history or `--after` to read newer history. Around
+windows remain limited to 100 messages.
+
+```bash
+discord messages list CHANNEL_ID --limit 500
+discord messages list CHANNEL_ID --limit 500 --format transcript
+discord messages list CHANNEL_ID --around MESSAGE_ID --format transcript
+discord messages list CHANNEL_ID --limit 500 > history.json
+```
+
+Use `--format transcript` on `messages list`, `get`, or `search` for a compact
+chronological view. It includes message/channel/author IDs, timestamps, reply
+references, message text, embed titles/descriptions/fields, attachment references,
+and received components, polls, forwarded snapshots, and stickers. Terminal
+control characters are replaced. Use the default JSON for the complete received
+message schema. Calendar filters remain available through `messages search`.
+
+Transcripts end with `[coverage]` followed by JSON metadata. Check `has_more`
+and `complete`: `has_more` is conservative when the requested limit is filled;
+`complete` describes the returned collection, not exhaustive channel history.
+Reads have an internal 100-request ceiling and the global timeout. A collection
+stopped by the request ceiling has `complete:false` and usable continuation
+cursors. HTTP failures discard collected messages and return the normal stderr
+error. Formats change presentation, not scope, and never download attachments
+or mark messages read.
 
 ## Threads and message context
 
@@ -234,20 +265,34 @@ Get attachment IDs from message metadata, then download a selected file:
 ```bash
 mkdir -p ./downloads
 discord attachments download CHANNEL_ID MESSAGE_ID ATTACHMENT_ID --dir ./downloads
+discord attachments download-many CHANNEL_ID MESSAGE_A MESSAGE_B --dir ./downloads
 ```
 
 Files stream during transfer. Downloads require an existing directory, preserve
 existing files, and use HTTPS Discord CDN URLs without forwarding credentials.
+Each file has a 1 GiB transfer ceiling. Transfer completeness follows the HTTP
+response, since Discord message metadata can describe a transformed image with
+a different size or MIME type from the original bytes served by the CDN.
 Use `--name report.pdf` to choose a simple filename. Completed downloads are
 published with an atomic hard link, so the destination filesystem must support
 hard links. For a large transfer, increase the total deadline with `--timeout 5m`.
+
+`download-many` selects every attachment in 1–100 explicit message IDs, deduplicates
+repeated messages, and saves files under `MESSAGE_ID/ATTACHMENT_ID/FILENAME` in
+the chosen directory. Its JSON manifest includes per-file `ok`, local `path`,
+actual `bytes`, and `error` when applicable, plus `succeeded`, `failed`, and
+`complete` totals. A missing message is a failed manifest entry. It continues
+after individual failures; existing files are retained. Partial batches print
+the manifest on stdout and a `partial_download` error on stderr with exit 1.
+Already completed files remain available. A channel/authentication failure
+before batch processing returns the normal error without a manifest.
 
 ## Pagination
 
 | Command | Default limit | Continue with |
 | --- | --- | --- |
 | `servers list` | 100 (max 200) | `--after NEXT_AFTER` |
-| `messages list` | 50 (max 100) | `--before NEXT_BEFORE` for older messages, or `--after NEXT_AFTER` for newer |
+| `messages list` | 50 (max 10,000; around max 100) | `--before NEXT_BEFORE` for older messages, or `--after NEXT_AFTER` for newer |
 | `messages search` | 25 (max 25) | Same filters and `--offset NEXT_OFFSET` |
 | `reactions users` | 50 (max 100) | `--after NEXT_AFTER` |
 | `threads list` | 25 (max 25) | `--before NEXT_BEFORE` (thread ID) |
@@ -295,7 +340,11 @@ Stable runtime codes include `authentication_failed`, `ambiguous_account`,
 `permission_denied`, `user_action_required`, `desktop_missing`, `desktop_locked`,
 `desktop_unavailable`, `desktop_unsupported`, `config_error`, `not_found`,
 `attachment_unavailable`, `rate_limited`, `indexing_delay`, `network_failure`,
-`invalid_upstream_data`, `uncertain_write`, `cancelled`, and `file_error`.
+`invalid_upstream_data`, `uncertain_write`, `cancelled`, `file_error`, and
+`partial_download`.
+
+Argument errors include a command-specific help pointer and, where available,
+usage and missing argument/flag names. Diagnostics omit supplied argument values.
 
 The default total deadline is 60 seconds, including authentication and transfers.
 Explicit rate limits and indexing delays get at most five attempts within that
@@ -310,21 +359,22 @@ destination selection, bounded reads and searches, requested writes,
 attachments, and error recovery. Copy the self-contained `skills/discord-cli`
 folder into your agent's skills directory.
 
-For Codex, from this checkout:
+For a shared personal skill installation, from this checkout:
 
 ```bash
-mkdir -p ~/.codex/skills
-cp -R skills/discord-cli ~/.codex/skills/
+mkdir -p ~/.agents/skills
+cp -R skills/discord-cli ~/.agents/skills/
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-New-Item -ItemType Directory -Force "$HOME\.codex\skills" | Out-Null
-Copy-Item -Recurse .\skills\discord-cli "$HOME\.codex\skills\"
+New-Item -ItemType Directory -Force "$HOME\.agents\skills" | Out-Null
+Copy-Item -Recurse .\skills\discord-cli "$HOME\.agents\skills\"
 ```
 
-For Claude Code, use `~/.claude/skills` instead. This installs the instructions;
+If an agent scans only its own discovery directory, add a link there to the
+shared skill instead of maintaining another copy. This installs the instructions;
 [install the CLI](#install) separately.
 
 ## Development

@@ -13,6 +13,25 @@ import (
 	"strings"
 )
 
+const maxDownloadBytes int64 = 1 << 30
+
+type DownloadResult struct {
+	OK           bool   `json:"ok"`
+	ChannelID    string `json:"channel_id"`
+	MessageID    string `json:"message_id"`
+	AttachmentID string `json:"attachment_id,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Bytes        int64  `json:"bytes"`
+	Error        *Error `json:"error,omitempty"`
+}
+
+type DownloadBatch struct {
+	Items     []DownloadResult `json:"items"`
+	Complete  bool             `json:"complete"`
+	Succeeded int              `json:"succeeded"`
+	Failed    int              `json:"failed"`
+}
+
 func SafeFilename(name string) bool {
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\:\x00<>\"|?*") || strings.TrimRight(name, ". ") != name {
 		return false
@@ -53,17 +72,25 @@ func (c *Client) Download(ctx context.Context, channel, message, attachment, dir
 	if selected == nil {
 		return nil, HTTPFailure(404)
 	}
+	return downloadAttachment(ctx, channel, message, selected, dir, name, transport)
+}
+
+func downloadAttachment(ctx context.Context, channel, message string, selected *Attachment, dir, name string, transport http.RoundTripper) (*DownloadResult, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, Invalid("--dir must name an accessible existing directory")
+	}
+	defer root.Close()
+	return downloadAttachmentRoot(ctx, channel, message, selected, root, dir, name, transport)
+}
+
+func downloadAttachmentRoot(ctx context.Context, channel, message string, selected *Attachment, root *os.Root, dir, name string, transport http.RoundTripper) (*DownloadResult, error) {
 	if name == "" {
 		name = selected.Filename
 	}
 	if !SafeFilename(name) {
 		return nil, Invalid("unsafe attachment filename; choose a simple filename with --name")
 	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return nil, Invalid("--dir must name an accessible existing directory")
-	}
-	defer root.Close()
 	if _, err := root.Lstat(name); !os.IsNotExist(err) {
 		return nil, Invalid("destination already exists or cannot be checked; choose another filename")
 	}
@@ -101,12 +128,20 @@ func (c *Client) Download(ctx context.Context, channel, message, attachment, dir
 	}
 	defer root.Remove(temporary)
 	defer file.Close()
-	if selected.Size == int64(^uint64(0)>>1) {
-		return nil, Upstream()
+	if response.ContentLength > maxDownloadBytes {
+		return nil, &Error{Code: "file_error", Message: "Attachment exceeds the 1 GiB download limit"}
 	}
-	count, err := io.Copy(file, io.LimitReader(response.Body, selected.Size+1))
-	if err != nil || count != selected.Size || (response.ContentLength >= 0 && count != response.ContentLength) || ctx.Err() != nil {
-		return nil, &Error{Code: "network_failure", Message: "Attachment transfer was incomplete; no final file was created"}
+	// Message metadata can describe a transformed image while URL serves the original.
+	limit := maxDownloadBytes
+	if response.ContentLength >= 0 {
+		limit = response.ContentLength
+	}
+	count, err := io.Copy(file, io.LimitReader(response.Body, limit+1))
+	if count > maxDownloadBytes {
+		return nil, &Error{Code: "file_error", Message: "Attachment exceeds the 1 GiB download limit"}
+	}
+	if err != nil || (response.ContentLength >= 0 && count != response.ContentLength) || ctx.Err() != nil {
+		return nil, &Error{Code: "network_failure", Message: "Attachment transfer was incomplete; no final file was created", Details: map[string]any{"bytes_received": count, "content_length": response.ContentLength}}
 	}
 	if file.Sync() != nil || file.Close() != nil {
 		return nil, &Error{Code: "file_error", Message: "Could not finish the downloaded file"}
@@ -119,5 +154,60 @@ func (c *Client) Download(ctx context.Context, channel, message, attachment, dir
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"ok": true, "channel_id": channel, "message_id": message, "attachment_id": attachment, "path": absolute, "bytes": count}, nil
+	return &DownloadResult{OK: true, ChannelID: channel, MessageID: message, AttachmentID: selected.ID, Path: absolute, Bytes: count}, nil
+}
+
+func (c *Client) DownloadMany(ctx context.Context, channel string, messages []string, dir string, transport http.RoundTripper) (*DownloadBatch, error) {
+	if _, err := c.Channel(channel); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, Invalid("--dir must name an accessible existing directory")
+	}
+	defer root.Close()
+	batch := &DownloadBatch{Items: []DownloadResult{}, Complete: true}
+	record := func(message, attachment string, err error) {
+		var failure *Error
+		if !errors.As(err, &failure) {
+			failure = &Error{Code: "file_error", Message: "Could not prepare the attachment output directory"}
+		}
+		batch.Items = append(batch.Items, DownloadResult{ChannelID: channel, MessageID: message, AttachmentID: attachment, Error: failure})
+		batch.Failed++
+		batch.Complete = false
+	}
+	seen := map[string]bool{}
+	for _, id := range messages {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		m, err := c.Message(channel, id)
+		if err != nil {
+			record(id, "", err)
+			continue
+		}
+		for _, a := range m.Attachments {
+			subdir := filepath.Join(id, a.ID)
+			if err := root.MkdirAll(subdir, 0700); err != nil {
+				record(id, a.ID, err)
+				continue
+			}
+			// OpenRoot rejects a pre-existing symlink escaping the selected directory.
+			subroot, err := root.OpenRoot(subdir)
+			if err != nil {
+				record(id, a.ID, err)
+				continue
+			}
+			result, err := downloadAttachmentRoot(ctx, channel, id, &a, subroot, filepath.Join(dir, subdir), "", transport)
+			subroot.Close()
+			if err != nil {
+				record(id, a.ID, err)
+				continue
+			}
+			batch.Items = append(batch.Items, *result)
+			batch.Succeeded++
+		}
+	}
+	return batch, nil
 }
