@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -31,6 +32,7 @@ type Root struct {
 	Messages MessagesCmd      `cmd:"" help:"Read, search, and act on messages by explicit IDs."`
 }
 type MessagesCmd struct {
+	Export MessageExportCmd `cmd:"" help:"Collect bounded history across pages, with explicit coverage and optional transcript/JSONL output."`
 	Edit   MessageEditCmd   `cmd:"" help:"Edit own message text or explicitly add/remove attachments."`
 	Delete MessageDeleteCmd `cmd:"" help:"Delete a message where Discord permits; no confirmation prompt."`
 	List   MessageListCmd   `cmd:"" help:"Read a bounded history page, newest first."`
@@ -85,7 +87,7 @@ func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 	}
 	// Parser diagnostics may contain arbitrary arguments, including accidentally pasted tokens.
 	if err != nil {
-		return report(stderr, api.Invalid("invalid command or arguments; use --help for command syntax"))
+		return report(stderr, argumentError(err))
 	}
 	if root.Timeout <= 0 {
 		return report(stderr, api.Invalid("--timeout must be positive"))
@@ -119,6 +121,61 @@ func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 		returnCode = report(stderr, err, c.Secrets...)
 	}
 	return returnCode
+}
+
+func argumentError(err error) error {
+	var domain *api.Error
+	errors.As(err, &domain)
+	failure := &api.Error{Code: "invalid_arguments", Message: "invalid command or arguments; use --help for command syntax"}
+	var parsed *kong.ParseError
+	if !errors.As(err, &parsed) || parsed.Context == nil || parsed.Context.Selected() == nil {
+		if domain != nil {
+			return domain
+		}
+		return failure
+	}
+	ctx := parsed.Context
+	node := ctx.Selected()
+	var commands []string
+	for n := node; n != nil && n.Type != kong.ApplicationNode; n = n.Parent {
+		commands = append([]string{n.Name}, commands...)
+	}
+	command := "discord " + strings.Join(commands, " ")
+	positionals := map[*kong.Positional]bool{}
+	flags := map[*kong.Flag]bool{}
+	for _, path := range ctx.Path {
+		positionals[path.Positional] = true
+		flags[path.Flag] = true
+	}
+	var missing, missingFlags []string
+	usage := command
+	for _, arg := range node.Positional {
+		usage += " " + arg.Summary()
+		if arg.Required && !positionals[arg] {
+			missing = append(missing, "<"+arg.Name+">")
+		}
+	}
+	for _, flag := range node.Flags {
+		if flag.Required && !flags[flag] {
+			missingFlags = append(missingFlags, "--"+flag.Name)
+		}
+	}
+	help := command + " --help"
+	failure.Message = "invalid command or arguments; use " + help
+	if len(missing) > 0 {
+		failure.Message = fmt.Sprintf("missing required arguments: %s; use %s", strings.Join(missing, " "), help)
+	}
+	failure.Details = map[string]any{"usage": usage + " [flags]", "help": help, "missing_arguments": missing, "missing_flags": missingFlags}
+	if len(missing) == 0 && domain != nil {
+		if domain.Details == nil {
+			domain.Details = failure.Details
+		}
+		return domain
+	}
+	if len(missing) == 0 && len(missingFlags) > 0 {
+		failure.Message = "missing required flags: " + strings.Join(missingFlags, " ") + "; use " + help
+	}
+	return failure
 }
 func report(w io.Writer, err error, secrets ...string) int {
 	var e *api.Error

@@ -12,6 +12,7 @@ import (
 )
 
 type MessageListCmd struct {
+	MessageOutput
 	Channel string `arg:"" help:"Channel ID."`
 	Limit   int    `default:"50" help:"Maximum messages, newest first (1–100)."`
 	Before  string `help:"Read older messages before this message ID."`
@@ -35,10 +36,14 @@ func (c *MessageListCmd) Validate() error {
 }
 func (c *MessageListCmd) Run(ctx *Context) error {
 	v, e := ctx.Client.History(c.Channel, c.Limit, c.Before, c.After, c.Around)
-	return ctx.Result(v, e)
+	if e != nil {
+		return e
+	}
+	return c.MessageOutput.print(ctx, v)
 }
 
 type MessageSearchCmd struct {
+	MessageOutput
 	Server     string   `help:"Search this server ID; mutually exclusive with --channel."`
 	Channel    string   `help:"Search this channel, DM, group DM, or known thread ID."`
 	InChannel  []string `sep:"none" help:"Restrict --server to these channel IDs; repeat to select multiple."`
@@ -122,7 +127,10 @@ func (c *MessageSearchCmd) Run(ctx *Context) error {
 		Pinned: c.Pinned != nil && *c.Pinned, Before: before, After: after,
 		Sort: c.Sort, Limit: c.Limit, Offset: c.Offset,
 	})
-	return ctx.Result(v, e)
+	if e != nil {
+		return e
+	}
+	return c.MessageOutput.print(ctx, v)
 }
 
 func (c *MessageSearchCmd) searchBounds() (string, string, error) {
@@ -188,6 +196,7 @@ func bounds(limit, max int, before, after string, exclusive bool) error {
 }
 
 type MessageGetCmd struct {
+	MessageOutput
 	Channel string `arg:"" help:"Channel ID."`
 	Message string `arg:"" help:"Exact message ID."`
 }
@@ -195,7 +204,10 @@ type MessageGetCmd struct {
 func (c *MessageGetCmd) Validate() error { return api.RequireIDs(c.Channel, c.Message) }
 func (c *MessageGetCmd) Run(ctx *Context) error {
 	v, e := ctx.Client.GetMessage(c.Channel, c.Message)
-	return ctx.Result(v, e)
+	if e != nil {
+		return e
+	}
+	return c.MessageOutput.print(ctx, v)
 }
 
 type TextFiles struct {

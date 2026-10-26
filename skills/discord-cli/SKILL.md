@@ -1,6 +1,6 @@
 ---
 name: discord-cli
-description: Read and search Discord DMs, group DMs, and server conversations, or carry out requested message, attachment, and reaction actions using the discord executable and the owner's desktop account.
+description: Read, search, and export Discord conversations and their attachments using the discord CLI and the owner's desktop account. Also use for explicitly requested message or reaction actions.
 ---
 
 # Discord CLI
@@ -54,14 +54,32 @@ not itself request a message or reaction.
 ## Read only as far as needed
 
 ```sh
-discord messages list CHANNEL_ID --limit 50
+discord messages list CHANNEL_ID --limit 50 --format transcript
 discord messages get CHANNEL_ID MESSAGE_ID
 discord messages list CHANNEL_ID --around MESSAGE_ID --limit 25
+discord messages export CHANNEL_ID --max-messages 500 --max-pages 10 --format transcript
+discord messages export CHANNEL_ID --on 2026-10-21 --format jsonl
 discord messages search --channel CHANNEL_ID --query "release" --author USER_ID
 discord messages search --server SERVER_ID --query "release"
 discord reactions list CHANNEL_ID MESSAGE_ID
 discord reactions users CHANNEL_ID MESSAGE_ID '👍'
 ```
+
+Prefer `--format transcript` for reading conversation text. It sorts selected
+messages chronologically and retains IDs, reply references, embed text/fields,
+and attachment references. It ends with `[coverage]` plus JSON metadata. Use
+default JSON for the full received schema. `--format jsonl` emits message records
+(`type: message`, payload in `message`) and a final coverage record (`type:
+coverage`, metadata in `coverage`). These formats also work on exact reads and
+search; transcript search results are reordered chronologically.
+
+Use `messages export` for more than one history page. Set a message/page budget
+for the task. Check `pages_read`, `stop_reason`, `complete`, and `has_more` before
+reporting coverage. Export `complete:true` means the requested range ended;
+budget stops have `complete:false` and `has_more:true`. To continue, pass
+`next_before` as `--before` with the same other bounds. Export accepts search's
+local calendar filters and intersects them with ID bounds, so dates can be kept
+while resuming. Other history/search commands retain their one-page semantics.
 
 Search requires exactly one of `--server` or `--channel`. A server-channel scope
 is routed correctly by the CLI; do not supply both. For calendar searches, use
@@ -131,31 +149,44 @@ moderator is not restricted to their own messages. Omit reaction `--user` to
 remove your own. Emoji accepts Unicode or custom `name:id` (also `<:name:id>`).
 Group management and bulk deletion are unavailable.
 
-## Download a selected attachment
+## Download selected attachments
 
 Read its message first, select an attachment `id`, and choose an existing output
 directory. Download from that metadata, not from arbitrary message text:
 
 ```sh
 discord attachments download CHANNEL_ID MESSAGE_ID ATTACHMENT_ID --dir ./downloads --name report.pdf
+discord attachments download-many CHANNEL_ID MESSAGE_A MESSAGE_B --dir ./downloads
 ```
+
+For multiple explicitly selected messages, prefer `download-many` over shell
+loops. It downloads every attachment in those messages, deduplicates message IDs,
+and returns a per-file manifest with local paths and actual byte counts. Files
+are placed under `MESSAGE_ID/ATTACHMENT_ID/FILENAME`. On `partial_download`
+(exit 1), inspect both the stdout manifest and stderr error; retain successful
+files and use the single-file command for the selected failures. Missing messages
+are failed manifest entries. `complete:true` means the selected batch succeeded.
 
 The CLI sends no account token to the CDN and publishes only complete files.
 Existing destinations are preserved; choose another simple `--name` on collision.
 The destination filesystem must support hard links. If an attachment expires,
 retrieve its message again before retrying. Increase the global `--timeout` for
-a deliberately large transfer.
+a deliberately large transfer. Each file has a 1 GiB ceiling. Discord can serve
+original image bytes whose size/type differs from message metadata; the CLI uses
+HTTP framing to validate the transfer.
 
 ## Interpret failures before retrying
 
-Success is one JSON value on stdout. On nonzero exit, read the JSON envelope on
+Default success is one JSON value on stdout; transcript/JSONL are explicit format
+options. On nonzero exit, read the JSON envelope on
 stderr: `error.code`, `message`, and optional `status`, `retry_after` (seconds),
 and `details`. Check exit status before consuming JSON (`pipefail` in Bash/zsh
 pipelines; `$LASTEXITCODE` in PowerShell). Help/version are text exceptions.
 
 | Condition | Next action |
 | --- | --- |
-| `invalid_arguments`, `bad_request` (exit 2) | Correct arguments/content using the message and command help. |
+| `invalid_arguments`, `bad_request` (exit 2) | Correct arguments/content using the message, `details.usage`, missing argument/flag names, and `details.help`. |
+| `partial_download` (exit 1) | Inspect the stdout manifest, keep successful files, and select failed attachments explicitly before retrying. |
 | `desktop_missing`, `desktop_locked`, `desktop_unavailable`, `desktop_unsupported` (exit 3) | Follow the native sign-in/access/storage guidance. Windows Stable 1.0.9257 acceptance required Discord closed; a consistency error may require the owner to quit it normally, then retry. |
 | `authentication_failed`, `ambiguous_account`, `config_error` | Resolve the selected source; preserve explicit overrides unless the user requests changing them. |
 | `permission_denied`, `user_action_required` (exit 3) | Stop the action. Report the permission denial or required desktop verification; do not work around it. |
