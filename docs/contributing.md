@@ -12,7 +12,7 @@
 | `internal/config` | Saved override location, atomic writing, OS permissions |
 | `internal/cli/runner_test.go` | Command-boundary behavior using a local HTTP server |
 | `internal/cli/threads_test.go` | Thread discovery, archive continuation, and around-message context through the command boundary |
-| `internal/cli/reading_test.go` | CDN representation differences, batch manifests, automatic history pagination, transcripts, and safe diagnostics through the command boundary |
+| `internal/cli/reading_test.go` | CDN representation differences, batch manifests, automatic history pagination, and transcripts through the command boundary |
 | `internal/cli/desktop_test.go` | Synthetic desktop records through the same boundary |
 | `internal/auth/key_*_test.go` | Native OS operations on synthetic/missing credentials |
 | `internal/cli/live_test.go` | Explicitly opted-in, read-only native acceptance |

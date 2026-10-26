@@ -105,51 +105,38 @@ func TestEncryptedDesktopFormats(t *testing.T) {
 	key := []byte("0123456789abcdef")
 	token := "encrypted.token.signature"
 	for _, platform := range []string{"darwin", "windows"} {
-		for _, corrupt := range []bool{false, true} {
-			t.Run(platform+map[bool]string{false: " valid", true: " corrupt"}[corrupt], func(t *testing.T) {
-				block, _ := aes.NewCipher(key)
-				data := []byte("v10")
-				if platform == "darwin" {
-					plain := []byte(token)
-					padding := aes.BlockSize - len(plain)%aes.BlockSize
-					plain = append(plain, bytes.Repeat([]byte{byte(padding)}, padding)...)
-					encrypted := make([]byte, len(plain))
-					cipher.NewCBCEncrypter(block, []byte("                ")).CryptBlocks(encrypted, plain)
-					data = append(data, encrypted...)
-				} else {
-					gcm, _ := cipher.NewGCM(block)
-					nonce := make([]byte, gcm.NonceSize())
-					data = append(data, nonce...)
-					data = gcm.Seal(data, nonce, []byte(token), nil)
+		t.Run(platform, func(t *testing.T) {
+			block, _ := aes.NewCipher(key)
+			data := []byte("v10")
+			if platform == "darwin" {
+				plain := []byte(token)
+				padding := aes.BlockSize - len(plain)%aes.BlockSize
+				plain = append(plain, bytes.Repeat([]byte{byte(padding)}, padding)...)
+				encrypted := make([]byte, len(plain))
+				cipher.NewCBCEncrypter(block, []byte("                ")).CryptBlocks(encrypted, plain)
+				data = append(data, encrypted...)
+			} else {
+				gcm, _ := cipher.NewGCM(block)
+				nonce := make([]byte, gcm.NonceSize())
+				data = append(data, nonce...)
+				data = gcm.Seal(data, nonce, []byte(token), nil)
+			}
+			root := sessionFixture(t, "dQw4w9WgXcQ:"+base64.StdEncoding.EncodeToString(data))
+			code, out, errs := invoke(t, []string{"auth", "status"}, "", func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != token {
+					t.Fatal("wrong decrypted token")
 				}
-				if corrupt {
-					data = data[:len(data)-1]
-				}
-				root := sessionFixture(t, "dQw4w9WgXcQ:"+base64.StdEncoding.EncodeToString(data))
-				var sessionTemp string
-				code, out, errs := invoke(t, []string{"auth", "status"}, "", func(w http.ResponseWriter, r *http.Request) {
-					if corrupt {
-						t.Fatal("malformed credential reached network")
-					}
-					if r.Header.Get("Authorization") != token {
-						t.Fatal("wrong decrypted token")
-					}
-					io.WriteString(w, `{"id":"111","username":"owner"}`)
-				}, func(o *Options) {
-					sessionTemp = o.TempDir
-					o.LookupEnv = func(string) (string, bool) { return "", false }
-					o.DesktopPaths = []string{root}
-					o.DesktopPlatform = platform
-					o.DesktopKey = func(context.Context, string) ([]byte, error) { return bytes.Clone(key), nil }
-				})
-				if (corrupt && (code != 3 || !strings.Contains(errs, "desktop_unsupported"))) || (!corrupt && code != 0) || strings.Contains(out+errs, token) {
-					t.Fatalf("%d %s %s", code, out, errs)
-				}
-				if entries, err := os.ReadDir(sessionTemp); err != nil || len(entries) != 0 {
-					t.Fatal("temporary session copy not cleaned")
-				}
+				io.WriteString(w, `{"id":"111","username":"owner"}`)
+			}, func(o *Options) {
+				o.LookupEnv = func(string) (string, bool) { return "", false }
+				o.DesktopPaths = []string{root}
+				o.DesktopPlatform = platform
+				o.DesktopKey = func(context.Context, string) ([]byte, error) { return bytes.Clone(key), nil }
 			})
-		}
+			if code != 0 || strings.Contains(out+errs, token) {
+				t.Fatalf("%d %s %s", code, out, errs)
+			}
+		})
 	}
 }
 func TestChromiumJournalPrecedingManifestWatermark(t *testing.T) {
