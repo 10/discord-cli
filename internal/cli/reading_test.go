@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestAttachmentRepresentationSize(t *testing.T) {
@@ -58,28 +57,31 @@ func TestSafeArgumentDiagnostics(t *testing.T) {
 	}
 }
 
-func TestHistoryExportCoverage(t *testing.T) {
+func TestHistoryPagination(t *testing.T) {
 	for _, tc := range []struct {
-		name                   string
-		flags                  []string
-		count, pages           int
-		complete               bool
-		reason, oldest, newest string
+		name            string
+		flags           []string
+		count, requests int
+		more            bool
+		oldest, newest  string
 	}{
-		{"exhausted", nil, 103, 2, true, "exhausted", "1001", "1103"},
-		{"message budget", []string{"--max-messages", "101"}, 101, 2, false, "max_messages", "1003", "1103"},
-		{"page budget", []string{"--max-pages", "1"}, 100, 1, false, "max_pages", "1004", "1103"},
-		{"range", []string{"--before", "1100", "--after", "1096"}, 3, 1, true, "after_bound", "1097", "1099"},
-		{"resume", []string{"--before", "1004"}, 3, 1, true, "exhausted", "1001", "1003"},
+		{"exhausted", []string{"--limit", "500"}, 103, 2, false, "1001", "1103"},
+		{"requested limit", []string{"--limit", "101"}, 101, 2, true, "1003", "1103"},
+		{"single page", []string{"--limit", "50"}, 50, 1, true, "1054", "1103"},
+		{"before", []string{"--limit", "500", "--before", "1100"}, 99, 1, false, "1001", "1099"},
+		{"resume older", []string{"--limit", "500", "--before", "1004"}, 3, 1, false, "1001", "1003"},
+		{"after", []string{"--limit", "101", "--after", "1000"}, 101, 2, true, "1001", "1101"},
+		{"after exhausted", []string{"--limit", "500", "--after", "1099"}, 4, 1, false, "1100", "1103"},
+		{"empty", []string{"--limit", "500", "--after", "1103"}, 0, 1, false, "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requests := 0
-			args := append([]string{"messages", "export", "456"}, tc.flags...)
-			code, out, errs := invoke(t, args, "", func(w http.ResponseWriter, r *http.Request) {
+			requests, channels := 0, 0
+			code, out, errs := invoke(t, append([]string{"messages", "list", "456"}, tc.flags...), "", func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/users/@me":
 					io.WriteString(w, `{"id":"111","username":"owner"}`)
 				case "/channels/456":
+					channels++
 					io.WriteString(w, `{"id":"456","type":1}`)
 				case "/channels/456/messages":
 					requests++
@@ -87,73 +89,59 @@ func TestHistoryExportCoverage(t *testing.T) {
 					if limit < 1 || limit > 100 {
 						t.Errorf("unbounded page: %s", r.URL)
 					}
-					before := 1104
-					if raw := r.URL.Query().Get("before"); raw != "" {
-						before, _ = strconv.Atoi(raw)
+					rows := []json.RawMessage{}
+					add := func(id int) {
+						rows = append(rows, json.RawMessage(strings.Replace(sampleMessage, "9007199254740993", strconv.Itoa(id), 1)))
 					}
-					var rows []json.RawMessage
-					for id := 1103; id >= 1001 && len(rows) < limit; id-- {
-						if id < before {
-							rows = append(rows, json.RawMessage(strings.Replace(sampleMessage, "9007199254740993", strconv.Itoa(id), 1)))
+					if raw := r.URL.Query().Get("after"); raw != "" {
+						after, _ := strconv.Atoi(raw)
+						for id := max(1001, after+1); id <= 1103 && len(rows) < limit; id++ {
+							add(id)
 						}
-					}
-					if rows == nil {
-						rows = []json.RawMessage{}
+					} else {
+						before := 1104
+						if raw := r.URL.Query().Get("before"); raw != "" {
+							before, _ = strconv.Atoi(raw)
+						}
+						for id := min(1103, before-1); id >= 1001 && len(rows) < limit; id-- {
+							add(id)
+						}
 					}
 					json.NewEncoder(w).Encode(rows)
 				default:
-					t.Errorf("unexpected request: %s", r.URL)
+					t.Errorf("unexpected request %s", r.URL)
 					w.WriteHeader(404)
 				}
 			}, nil)
 			var result struct {
 				Items    []struct{ ID string }
 				Complete bool
-				HasMore  bool   `json:"has_more"`
-				Pages    int    `json:"pages_read"`
-				Reason   string `json:"stop_reason"`
+				HasMore  bool `json:"has_more"`
+				Order    string
 				Before   string `json:"next_before"`
 				After    string `json:"next_after"`
 			}
 			if code != 0 || errs != "" || json.Unmarshal([]byte(out), &result) != nil {
-				t.Fatalf("exit=%d out=%s err=%s", code, out, errs)
+				t.Fatalf("%d %s %s", code, out, errs)
 			}
-			if len(result.Items) != tc.count || result.Complete != tc.complete || result.HasMore == tc.complete || result.Pages != tc.pages || requests != tc.pages || result.Reason != tc.reason || result.Before != tc.oldest || result.After != tc.newest {
-				t.Fatalf("wrong coverage: %s requests=%d", out, requests)
+			if len(result.Items) != tc.count || !result.Complete || result.HasMore != tc.more || requests != tc.requests || channels != 1 || result.Before != tc.oldest || result.After != tc.newest || result.Order != "newest_first" {
+				t.Fatalf("wrong coverage: %s requests=%d channels=%d", out, requests, channels)
 			}
-			seen := map[string]bool{}
+			previous := uint64(^uint64(0))
 			for _, m := range result.Items {
-				if seen[m.ID] {
-					t.Fatal("duplicate message", m.ID)
+				id, _ := strconv.ParseUint(m.ID, 10, 64)
+				if id >= previous {
+					t.Fatal("duplicate or out-of-order message", out)
 				}
-				seen[m.ID] = true
+				previous = id
 			}
 		})
 	}
 }
 
-func TestExportDateBoundsAndNonProgress(t *testing.T) {
-	day := time.Date(2026, 9, 15, 12, 0, 0, 0, time.Local)
-	cursor := strconv.FormatUint(uint64(day.UnixMilli()-1420070400000)<<22, 10)
-	code, out, errs := invoke(t, []string{"messages", "export", "456", "--on", "2026-09-15", "--before", cursor}, "", func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/users/@me":
-			io.WriteString(w, `{"id":"111","username":"owner"}`)
-		case "/channels/456":
-			io.WriteString(w, `{"id":"456","type":1}`)
-		default:
-			if r.URL.Query().Get("before") != cursor {
-				t.Errorf("resume lost date/cursor bounds: %s", r.URL)
-			}
-			older := strconv.FormatUint(uint64(day.Add(-13*time.Hour).UnixMilli()-1420070400000)<<22, 10)
-			io.WriteString(w, "["+strings.Replace(sampleMessage, "9007199254740993", older, 1)+"]")
-		}
-	}, nil)
-	if code != 0 || errs != "" || !strings.Contains(out, `"complete":true`) || !strings.Contains(out, `"items":[]`) || !strings.Contains(out, `"stop_reason":"after_bound"`) {
-		t.Fatalf("%d %s %s", code, out, errs)
-	}
+func TestHistoryRejectsNonProgress(t *testing.T) {
 	calls := 0
-	code, out, errs = invoke(t, []string{"messages", "export", "456", "--before", "9007199254740993"}, "", func(w http.ResponseWriter, r *http.Request) {
+	code, out, errs := invoke(t, []string{"messages", "list", "456", "--limit", "101", "--before", "9007199254740993"}, "", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/users/@me":
 			io.WriteString(w, `{"id":"111","username":"owner"}`)
@@ -169,78 +157,52 @@ func TestExportDateBoundsAndNonProgress(t *testing.T) {
 	}
 }
 
-func TestMessageReadingFormats(t *testing.T) {
+func TestMessageTranscripts(t *testing.T) {
 	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}]}`
 	old := strings.Replace(rich, "9007199254740993", "9007199254740992", 1)
-	for _, format := range []string{"jsonl", "transcript"} {
-		for _, operation := range []string{"list", "get", "search", "export"} {
-			t.Run(format+"/"+operation, func(t *testing.T) {
-				args := []string{"messages", operation, "456"}
-				count := 2
-				if operation == "get" {
-					args = append(args, "9007199254740993")
-					count = 1
-				}
-				if operation == "search" {
-					args = []string{"messages", "search", "--server", "123"}
-				}
-				args = append(args, "--format", format)
-				code, out, errs := invoke(t, args, "", func(w http.ResponseWriter, r *http.Request) {
-					switch r.URL.Path {
-					case "/users/@me":
-						io.WriteString(w, `{"id":"111","username":"owner"}`)
-					case "/channels/456":
-						io.WriteString(w, `{"id":"456","type":1}`)
-					case "/guilds/123/messages/search":
-						io.WriteString(w, `{"total_results":2,"messages":[[`+rich+`],[`+old+`]]}`)
-					default:
-						if operation == "get" {
-							io.WriteString(w, "["+rich+"]")
-						} else {
-							io.WriteString(w, "["+rich+","+old+"]")
-						}
-					}
-				}, nil)
-				if code != 0 || errs != "" || strings.Contains(out, "synthetic.token.signature") {
-					t.Fatalf("exit=%d out=%s err=%s", code, out, errs)
-				}
-				if format == "jsonl" {
-					lines := strings.Split(strings.TrimSpace(out), "\n")
-					if len(lines) != count+1 {
-						t.Fatalf("missing JSONL records: %s", out)
-					}
-					for i, line := range lines {
-						var row map[string]json.RawMessage
-						if json.Unmarshal([]byte(line), &row) != nil {
-							t.Fatal("invalid JSONL", line)
-						}
-						if i < count {
-							var m struct {
-								ID     string
-								Embeds json.RawMessage
-							}
-							if string(row["type"]) != `"message"` || json.Unmarshal(row["message"], &m) != nil || m.ID == "" || !strings.Contains(string(m.Embeds), "Passed") {
-								t.Fatal("message lost fields", line)
-							}
-						} else if string(row["type"]) != `"coverage"` || !strings.Contains(string(row["coverage"]), `"message_count":`+strconv.Itoa(count)) {
-							t.Fatal("missing coverage", line)
-						}
-					}
-				} else {
-					for _, want := range []string{"first line", "[REDACTED]", "reply_to: 777", "embed: Release", "Build ready", "Status: Passed", "attachment:", "Component text", "Ship?", "Forwarded text", "[coverage]", `"order":"oldest_first"`} {
-						if !strings.Contains(out, want) {
-							t.Errorf("missing %q: %s", want, out)
-						}
-					}
-					if strings.Contains(out, "\x1b") {
-						t.Fatal("terminal control sequence retained")
-					}
-					if count == 2 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
-						t.Fatal("transcript is not chronological")
+	for _, operation := range []string{"list", "get", "search"} {
+		t.Run(operation, func(t *testing.T) {
+			args := []string{"messages", operation, "456"}
+			count := 2
+			if operation == "get" {
+				args = append(args, "9007199254740993")
+				count = 1
+			}
+			if operation == "search" {
+				args = []string{"messages", "search", "--server", "123"}
+			}
+			args = append(args, "--format", "transcript")
+			code, out, errs := invoke(t, args, "", func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/users/@me":
+					io.WriteString(w, `{"id":"111","username":"owner"}`)
+				case "/channels/456":
+					io.WriteString(w, `{"id":"456","type":1}`)
+				case "/guilds/123/messages/search":
+					io.WriteString(w, `{"total_results":2,"messages":[[`+rich+`],[`+old+`]]}`)
+				default:
+					if operation == "get" {
+						io.WriteString(w, "["+rich+"]")
+					} else {
+						io.WriteString(w, "["+rich+","+old+"]")
 					}
 				}
-			})
-		}
+			}, nil)
+			if code != 0 || errs != "" || strings.Contains(out, "synthetic.token.signature") {
+				t.Fatalf("%d %s %s", code, out, errs)
+			}
+			for _, want := range []string{"first line", "[REDACTED]", "reply_to: 777", "embed: Release", "Build ready", "Status: Passed", "attachment:", "Component text", "Ship?", "Forwarded text", "[coverage]", `"order":"oldest_first"`, `"message_count":` + strconv.Itoa(count)} {
+				if !strings.Contains(out, want) {
+					t.Errorf("missing %q: %s", want, out)
+				}
+			}
+			if strings.Contains(out, "\x1b") {
+				t.Fatal("terminal control sequence retained")
+			}
+			if count == 2 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
+				t.Fatal("transcript is not chronological")
+			}
+		})
 	}
 }
 
@@ -322,11 +284,13 @@ func TestBatchAttachmentManifest(t *testing.T) {
 
 func TestReadingValidationBeforeAuthentication(t *testing.T) {
 	for _, args := range [][]string{
-		{"messages", "export", "456", "--max-pages", "0"},
-		{"messages", "export", "456", "--max-messages", "10001"},
-		{"messages", "export", "456", "--on", "2026-02-30"},
-		{"messages", "export", "456", "--before", "100", "--after", "200"},
-		{"messages", "export", "456", "--format", "bad"},
+		{"messages", "list", "456", "--limit", "0"},
+		{"messages", "list", "456", "--limit", "10001"},
+		{"messages", "list", "456", "--around", "789", "--limit", "101"},
+		{"messages", "list", "456", "--before", "100", "--after", "200"},
+		{"messages", "list", "456", "--format", "jsonl"},
+		{"messages", "export", "456"},
+		{"messages", "list", "456", "--max-pages", "1"},
 		{"attachments", "download-many", "456", "bad", "--dir", t.TempDir()},
 		{"attachments", "download", "456", "secret.token.value"},
 	} {
@@ -382,9 +346,9 @@ func TestDownloadFramingAndCeiling(t *testing.T) {
 	}
 }
 
-func TestExportFailureDiscardsCollectedMessages(t *testing.T) {
+func TestHistoryFailureDiscardsCollectedMessages(t *testing.T) {
 	calls := 0
-	code, out, errs := invoke(t, []string{"messages", "export", "456", "--max-messages", "101", "--format", "jsonl"}, "", func(w http.ResponseWriter, r *http.Request) {
+	code, out, errs := invoke(t, []string{"messages", "list", "456", "--limit", "101", "--format", "transcript"}, "", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/users/@me":
 			io.WriteString(w, `{"id":"111","username":"owner"}`)
@@ -405,6 +369,37 @@ func TestExportFailureDiscardsCollectedMessages(t *testing.T) {
 		}
 	}, nil)
 	if code != 1 || out != "" || calls != 2 || !strings.Contains(errs, "upstream_error") {
-		t.Fatalf("failed export leaked output: %d %s %s calls=%d", code, out, errs, calls)
+		t.Fatalf("failed history read leaked output: %d %s %s calls=%d", code, out, errs, calls)
+	}
+}
+
+func TestHistoryInternalRequestCeiling(t *testing.T) {
+	calls := 0
+	code, out, errs := invoke(t, []string{"messages", "list", "456", "--limit", "101"}, "", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/users/@me":
+			io.WriteString(w, `{"id":"111","username":"owner"}`)
+		case "/channels/456":
+			io.WriteString(w, `{"id":"456","type":1}`)
+		default:
+			calls++
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			row := json.RawMessage(strings.Replace(sampleMessage, "9007199254740993", strconv.Itoa(2001-calls), 1))
+			rows := make([]json.RawMessage, limit)
+			for i := range rows {
+				rows[i] = row
+			}
+			json.NewEncoder(w).Encode(rows)
+		}
+	}, nil)
+	var result struct {
+		Items    []struct{ ID string }
+		Complete bool
+		HasMore  bool   `json:"has_more"`
+		Before   string `json:"next_before"`
+		After    string `json:"next_after"`
+	}
+	if code != 0 || errs != "" || json.Unmarshal([]byte(out), &result) != nil || calls != 100 || len(result.Items) != 100 || result.Complete || !result.HasMore || result.Before != "1901" || result.After != "2000" {
+		t.Fatalf("unbounded or misleading read: %d %s %s requests=%d", code, out, errs, calls)
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: discord-cli
-description: Read, search, and export Discord conversations and their attachments using the discord CLI and the owner's desktop account. Also use for explicitly requested message or reaction actions.
+description: Read and search Discord conversations and download their attachments using the discord CLI and the owner's desktop account. Also use for explicitly requested message or reaction actions.
 ---
 
 # Discord CLI
@@ -57,8 +57,7 @@ not itself request a message or reaction.
 discord messages list CHANNEL_ID --limit 50 --format transcript
 discord messages get CHANNEL_ID MESSAGE_ID
 discord messages list CHANNEL_ID --around MESSAGE_ID --limit 25
-discord messages export CHANNEL_ID --max-messages 500 --max-pages 10 --format transcript
-discord messages export CHANNEL_ID --on 2026-10-21 --format jsonl
+discord messages list CHANNEL_ID --limit 500 --format transcript
 discord messages search --channel CHANNEL_ID --query "release" --author USER_ID
 discord messages search --server SERVER_ID --query "release"
 discord reactions list CHANNEL_ID MESSAGE_ID
@@ -68,18 +67,16 @@ discord reactions users CHANNEL_ID MESSAGE_ID '👍'
 Prefer `--format transcript` for reading conversation text. It sorts selected
 messages chronologically and retains IDs, reply references, embed text/fields,
 and attachment references. It ends with `[coverage]` plus JSON metadata. Use
-default JSON for the full received schema. `--format jsonl` emits message records
-(`type: message`, payload in `message`) and a final coverage record (`type:
-coverage`, metadata in `coverage`). These formats also work on exact reads and
-search; transcript search results are reordered chronologically.
+default JSON for the full received schema. These formats also work on exact
+reads and search; transcript search results are reordered chronologically.
 
-Use `messages export` for more than one history page. Set a message/page budget
-for the task. Check `pages_read`, `stop_reason`, `complete`, and `has_more` before
-reporting coverage. Export `complete:true` means the requested range ended;
-budget stops have `complete:false` and `has_more:true`. To continue, pass
-`next_before` as `--before` with the same other bounds. Export accepts search's
-local calendar filters and intersects them with ID bounds, so dates can be kept
-while resuming. Other history/search commands retain their one-page semantics.
+For more history, increase `messages list --limit` (maximum 10,000) rather than
+writing a pagination loop. The CLI fetches pages automatically within its timeout
+and internal request ceiling. Check `complete` and `has_more`; `complete:true`
+describes the returned collection, not exhaustive channel history. If
+`has_more:true`, continue with `next_before` for older messages or `next_after`
+for newer messages when the task requires it. `--around` supports at most 100
+messages. Calendar filters stay on `messages search`.
 
 Search requires exactly one of `--server` or `--channel`. A server-channel scope
 is routed correctly by the CLI; do not supply both. For calendar searches, use
@@ -110,7 +107,7 @@ For more context, keep the scope and filters and use the returned continuation:
   timestamps; joined-private cursors are thread IDs. `private` requires Manage
   Threads; `joined-private` only reads threads the account joined.
 
-Stop when the requested context is sufficient or the chosen page budget is
+Stop when the requested context is sufficient or the chosen message budget is
 reached. `complete:true` describes the page/index state, not exhaustive history;
 inspect `has_more` too. At `continuation_limited:true`, narrow search filters
 instead of incrementing the offset. Report partial coverage when stopping early
@@ -177,8 +174,8 @@ HTTP framing to validate the transfer.
 
 ## Interpret failures before retrying
 
-Default success is one JSON value on stdout; transcript/JSONL are explicit format
-options. On nonzero exit, read the JSON envelope on
+Default success is one JSON value on stdout; transcript is an explicit format
+option. On nonzero exit, read the JSON envelope on
 stderr: `error.code`, `message`, and optional `status`, `retry_after` (seconds),
 and `details`. Check exit status before consuming JSON (`pipefail` in Bash/zsh
 pipelines; `$LASTEXITCODE` in PowerShell). Help/version are text exceptions.

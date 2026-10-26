@@ -115,23 +115,53 @@ func (c *Client) history(channel string, limit int, before, after, around string
 	}
 	return items, nil
 }
+
+const MaxHistoryLimit = 10000
+
 func (c *Client) History(channel string, limit int, before, after, around string) (any, error) {
 	if _, e := c.Channel(channel); e != nil {
 		return nil, e
 	}
-	items, err := c.history(channel, limit, before, after, around)
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(items, func(i, j int) bool { return lessID(items[j].ID, items[i].ID) })
-	if len(items) > limit {
-		if items[len(items)-1].ID == around {
-			items = items[1:]
+	items := []Message{}
+	seen := map[string]bool{}
+	p := Page{Order: "newest_first"}
+	// A fixed request ceiling also bounds upstream pages containing duplicate IDs.
+	for requests := 0; requests < 100; requests++ {
+		pageLimit := min(100, limit-len(items))
+		page, err := c.history(channel, pageLimit, before, after, around)
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(page, func(i, j int) bool { return lessID(page[j].ID, page[i].ID) })
+		if len(page) > pageLimit {
+			if page[len(page)-1].ID == around {
+				page = page[1:]
+			} else {
+				page = page[:pageLimit]
+			}
+		}
+		for _, m := range page {
+			if (before != "" && !lessID(m.ID, before)) || (after != "" && !lessID(after, m.ID)) {
+				return nil, Upstream()
+			}
+			if !seen[m.ID] {
+				items = append(items, m)
+				seen[m.ID] = true
+			}
+		}
+		p.HasMore = len(page) == pageLimit
+		if around != "" || !p.HasMore || len(items) == limit {
+			p.Complete = true
+			break
+		}
+		if after != "" {
+			after = page[0].ID
 		} else {
-			items = items[:limit]
+			before = page[len(page)-1].ID
 		}
 	}
-	p := Page{Items: items, HasMore: len(items) == limit, Complete: true, Order: "newest_first"}
+	sort.Slice(items, func(i, j int) bool { return lessID(items[j].ID, items[i].ID) })
+	p.Items = items
 	if len(items) > 0 {
 		p.NextBefore = items[len(items)-1].ID
 		p.NextAfter = items[0].ID

@@ -12,7 +12,7 @@ import (
 )
 
 type MessageOutput struct {
-	Format string `default:"json" enum:"json,jsonl,transcript" help:"Output format: original JSON, JSONL message/coverage records, or a chronological text transcript."`
+	Format string `default:"json" enum:"json,transcript" help:"Output format: original JSON or a chronological text transcript."`
 }
 
 func lessMessageID(a, b string) bool {
@@ -31,9 +31,6 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 	switch v := value.(type) {
 	case api.Page:
 		page = v
-	case *api.HistoryExport:
-		page = v.Page
-		metadata["pages_read"], metadata["stop_reason"] = v.PagesRead, v.StopReason
 	case *api.Message:
 		page = api.Page{Items: []api.Message{*v}, Complete: true, Order: "exact"}
 	default:
@@ -58,14 +55,6 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 	}
 	if page.ContinuationLimited {
 		metadata["continuation_limited"] = true
-	}
-	if o.Format == "jsonl" {
-		for _, m := range items {
-			if err := ctx.Print(map[string]any{"type": "message", "message": m}); err != nil {
-				return err
-			}
-		}
-		return ctx.Print(map[string]any{"type": "coverage", "coverage": metadata})
 	}
 	items = append([]api.Message(nil), items...)
 	sort.Slice(items, func(i, j int) bool { return lessMessageID(items[i].ID, items[j].ID) })

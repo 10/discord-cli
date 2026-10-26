@@ -14,7 +14,7 @@ import (
 type MessageListCmd struct {
 	MessageOutput
 	Channel string `arg:"" help:"Channel ID."`
-	Limit   int    `default:"50" help:"Maximum messages, newest first (1–100)."`
+	Limit   int    `default:"50" help:"Maximum messages (1–10000); larger reads fetch pages automatically. Around windows support at most 100."`
 	Before  string `help:"Read older messages before this message ID."`
 	After   string `help:"Read newer messages after this message ID."`
 	Around  string `help:"Read context around this message ID; cannot combine with --before or --after."`
@@ -31,8 +31,11 @@ func (c *MessageListCmd) Validate() error {
 		if e := api.RequireIDs(c.Around); e != nil {
 			return e
 		}
+		if c.Limit > 100 {
+			return api.Invalid("--around supports at most 100 messages")
+		}
 	}
-	return bounds(c.Limit, 100, c.Before, c.After, true)
+	return bounds(c.Limit, api.MaxHistoryLimit, c.Before, c.After, true)
 }
 func (c *MessageListCmd) Run(ctx *Context) error {
 	v, e := ctx.Client.History(c.Channel, c.Limit, c.Before, c.After, c.Around)

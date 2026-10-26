@@ -32,7 +32,7 @@ message action. Examples use placeholder IDs and illustrative output.
 
 - **Find conversations** — list servers, channels, active threads, forum posts, thread archives, DMs, and friends, or open a one-to-one DM by user ID.
 - **Read and search** — page through history, read context around a message, retrieve an exact message, or filter one server or conversation by text, authors, mentions, content type, author type, pins, and dates.
-- **Read with agents** — export bounded history across pages, render chronological transcripts, or produce JSONL with explicit coverage records.
+- **Read with agents** — request more messages with `--limit` and render chronological transcripts with explicit coverage.
 - **Send and edit** — write text, reply to a message, attach files, and edit or delete messages where permitted.
 - **Reactions** — inspect counts and participants, add emoji, and remove your own or another user's reaction where permitted.
 - **Attachments** — upload explicit files and download selected attachments or batches from explicit messages without overwriting existing files.
@@ -82,45 +82,35 @@ discord messages list CHANNEL_ID --limit 50 |
   jq '.items[] | {id, author: .author.username, content}'
 ```
 
-## Agent reading and export
+## Agent reading
 
-Use `--format transcript` on `messages list`, `get`, `search`, or `export` to
-read a compact chronological transcript. It includes message/channel/author IDs,
-timestamps, reply references, message text, embed titles/descriptions/fields,
-attachment references, and received components, polls, forwarded snapshots, and
-stickers. Terminal control characters are replaced. Transcripts are a selected
-view; use the default JSON for the complete received message schema.
+`messages list` reads up to `--limit` messages, fetching additional pages
+automatically when needed. The default is 50; the maximum is 10,000. Use
+`--before` to continue older history or `--after` to read newer history. Around
+windows remain limited to 100 messages.
 
 ```bash
-discord messages list CHANNEL_ID --limit 50 --format transcript
+discord messages list CHANNEL_ID --limit 500
+discord messages list CHANNEL_ID --limit 500 --format transcript
 discord messages list CHANNEL_ID --around MESSAGE_ID --format transcript
-discord messages export CHANNEL_ID --on 2026-10-21 \
-  --max-messages 500 --max-pages 10 --format transcript
-discord messages export CHANNEL_ID --max-messages 1000 --format jsonl > history.jsonl
+discord messages list CHANNEL_ID --limit 500 > history.json
 ```
 
-`export` walks older history in one channel, fetching at most 100 messages per
-page. Defaults are 500 messages and 10 pages; ceilings are 10,000 messages and
-100 pages. It accepts exclusive `--before`/`--after` message-ID bounds and the
-same local calendar semantics as search (`--on`, `--before-date`, `--after-date`).
-Export intersects ID and date bounds, so `--before NEXT_BEFORE` can resume a
-dated export. Keep the other bounds unchanged when continuing.
+Use `--format transcript` on `messages list`, `get`, or `search` for a compact
+chronological view. It includes message/channel/author IDs, timestamps, reply
+references, message text, embed titles/descriptions/fields, attachment references,
+and received components, polls, forwarded snapshots, and stickers. Terminal
+control characters are replaced. Use the default JSON for the complete received
+message schema. Calendar filters remain available through `messages search`.
 
-Export JSON contains `items`, `pages_read`, `stop_reason`, `complete`, `has_more`,
-and available history cursors. `complete: true` means the requested range was
-exhausted or its lower bound was reached. Reaching a message/page budget returns
-exit 0 with `complete: false`, `has_more: true`, and a continuation cursor.
-`stop_reason` is `exhausted`, `after_bound`, `max_messages`, or `max_pages`.
-An exact full page is conservatively incomplete until another page establishes
-the end. HTTP failures discard the export and produce the normal stderr error.
-
-Transcript output ends with `[coverage]` followed by JSON metadata. JSONL
-contains one `{"type":"message","message":{...}}` record per message and a
-final `{"type":"coverage","coverage":{...}}` record. JSONL preserves the
-command's normal order; transcripts sort the selected messages oldest first,
-including search results. Check exit status and coverage before claiming a
-complete read. Formats change presentation, not the requested scope, and never
-download attachments or mark messages read.
+Transcripts end with `[coverage]` followed by JSON metadata. Check `has_more`
+and `complete`: `has_more` is conservative when the requested limit is filled;
+`complete` describes the returned collection, not exhaustive channel history.
+Reads have an internal 100-request ceiling and the global timeout. A collection
+stopped by the request ceiling has `complete:false` and usable continuation
+cursors. HTTP failures discard collected messages and return the normal stderr
+error. Formats change presentation, not scope, and never download attachments
+or mark messages read.
 
 ## Threads and message context
 
@@ -302,7 +292,7 @@ before batch processing returns the normal error without a manifest.
 | Command | Default limit | Continue with |
 | --- | --- | --- |
 | `servers list` | 100 (max 200) | `--after NEXT_AFTER` |
-| `messages list` | 50 (max 100) | `--before NEXT_BEFORE` for older messages, or `--after NEXT_AFTER` for newer |
+| `messages list` | 50 (max 10,000; around max 100) | `--before NEXT_BEFORE` for older messages, or `--after NEXT_AFTER` for newer |
 | `messages search` | 25 (max 25) | Same filters and `--offset NEXT_OFFSET` |
 | `reactions users` | 50 (max 100) | `--after NEXT_AFTER` |
 | `threads list` | 25 (max 25) | `--before NEXT_BEFORE` (thread ID) |

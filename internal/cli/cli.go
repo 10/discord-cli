@@ -32,10 +32,9 @@ type Root struct {
 	Messages MessagesCmd      `cmd:"" help:"Read, search, and act on messages by explicit IDs."`
 }
 type MessagesCmd struct {
-	Export MessageExportCmd `cmd:"" help:"Collect bounded history across pages, with explicit coverage and optional transcript/JSONL output."`
 	Edit   MessageEditCmd   `cmd:"" help:"Edit own message text or explicitly add/remove attachments."`
 	Delete MessageDeleteCmd `cmd:"" help:"Delete a message where Discord permits; no confirmation prompt."`
-	List   MessageListCmd   `cmd:"" help:"Read a bounded history page, newest first."`
+	List   MessageListCmd   `cmd:"" help:"Read up to --limit messages, newest first; fetch additional pages automatically."`
 	Search MessageSearchCmd `cmd:"" help:"Search exactly one server or conversation; inspect complete and has_more."`
 	Get    MessageGetCmd    `cmd:"" help:"Read exactly one message."`
 	Send   MessageSendCmd   `cmd:"" help:"Send text, a reply, or explicit files."`
