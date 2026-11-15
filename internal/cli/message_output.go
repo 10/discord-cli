@@ -76,6 +76,9 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		if u.GlobalName != nil && *u.GlobalName != "" {
 			name = *u.GlobalName
 		}
+		if u.Bot {
+			return fmt.Sprintf("%q (@%q; user=%s; bot)", name, u.Username, u.ID)
+		}
 		return fmt.Sprintf("%q (@%q; user=%s)", name, u.Username, u.ID)
 	}
 	author := func(m api.Message) string { return "[" + m.Timestamp + "] " + who(m.Author) }

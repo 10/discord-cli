@@ -205,6 +205,7 @@ type User struct {
 	Username      string  `json:"username"`
 	GlobalName    *string `json:"global_name,omitempty"`
 	Discriminator string  `json:"discriminator,omitempty"`
+	Bot           bool    `json:"bot,omitempty"`
 }
 
 func (c *Client) Me() (*User, error) {
