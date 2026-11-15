@@ -344,7 +344,8 @@ Stable runtime codes include `authentication_failed`, `ambiguous_account`,
 `partial_download`.
 
 Argument errors include a command-specific help pointer and, where available,
-usage and missing argument/flag names. Diagnostics omit supplied argument values.
+usage, missing argument/flag names, allowed values, and suggested command or
+flag names. Diagnostics omit supplied argument values.
 
 The default total deadline is 60 seconds, including authentication and transfers.
 Explicit rate limits and indexing delays get at most five attempts within that

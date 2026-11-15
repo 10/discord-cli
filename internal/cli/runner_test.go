@@ -52,7 +52,10 @@ func TestInvalidInputsDoNotReadCredentials(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--token", "a-secret"}, "invalid_arguments"},
+		{[]string{"--token", "a-secret"}, "unknown flag;"},
+		{[]string{"messages", "list", "456", "--format", "a-secret"}, `--format must be one of \"json\",\"transcript\"; use discord messages list --help`},
+		{[]string{"messages", "lst", "a-secret"}, `unexpected argument; did you mean one of \"list\"`},
+		{[]string{"messages", `lst, did you mean "a-secret"?`}, "unexpected argument; use discord messages --help"},
 		{[]string{"attachments", "download", "456", "789", "--dir", t.TempDir()}, "discord attachments download --help"},
 		{[]string{"threads", "archived", "456", "--type", "joined-private", "--before", "2026-09-14T00:00:00Z"}, "invalid_arguments"},
 		{[]string{"messages", "search", "--server", "123", "--pinned=false"}, "does not reliably exclude pinned"},
