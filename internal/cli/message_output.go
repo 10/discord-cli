@@ -80,28 +80,34 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 	attachment := func(label string, a api.Attachment) {
 		text(label, fmt.Sprintf("%q id=%s type=%q size=%d", a.Filename, a.ID, a.ContentType, a.Size))
 	}
-	// Quote a replied-to message once, only when the transcript lacks it.
+	// Quote a referenced message once, only when the transcript lacks it.
 	quoted := map[string]bool{}
 	for _, m := range items {
 		quoted[m.ID] = true
 	}
 	for _, m := range items {
 		fmt.Fprintf(&out, "%s message=%s channel=%s\n", author(m), m.ID, m.ChannelID)
-		if m.Reference != nil && m.Reference.MessageID != "" {
-			if m.Reference.Type == 1 {
-				text("forwarded_from: ", fmt.Sprintf("message=%s channel=%s", m.Reference.MessageID, m.Reference.ChannelID))
-			} else {
-				text("reply_to: ", m.Reference.MessageID)
-				var original api.Message
-				if !quoted[m.Reference.MessageID] && json.Unmarshal(m.ReferencedMessage, &original) == nil && original.ID == m.Reference.MessageID {
-					quoted[original.ID] = true
-					text("> ", author(original))
-					if original.Content != "" {
-						text("> ", strings.ReplaceAll(original.Content, "\n", "\n> "))
-					}
-					for _, a := range original.Attachments {
-						attachment("> attachment: ", a)
-					}
+		if ref := m.Reference; ref != nil && ref.MessageID != "" {
+			source := fmt.Sprintf("message=%s channel=%s", ref.MessageID, ref.ChannelID)
+			switch {
+			case ref.Type == 1:
+				text("forwarded_from: ", source)
+			case m.Type == nil || *m.Type == 19:
+				text("reply_to: ", ref.MessageID)
+			case *m.Type == 21:
+				text("thread_starter: ", source)
+			default:
+				text("references: ", source)
+			}
+			var original api.Message
+			if !quoted[ref.MessageID] && json.Unmarshal(m.ReferencedMessage, &original) == nil && original.ID == ref.MessageID {
+				quoted[original.ID] = true
+				text("> ", author(original))
+				if original.Content != "" {
+					text("> ", strings.ReplaceAll(original.Content, "\n", "\n> "))
+				}
+				for _, a := range original.Attachments {
+					attachment("> attachment: ", a)
 				}
 			}
 		}

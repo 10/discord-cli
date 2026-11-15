@@ -84,10 +84,11 @@ func TestMessageTranscripts(t *testing.T) {
 	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"referenced_message":{"id":"777","channel_id":"456","author":{"id":"222","username":"asker"},"content":"Original question","timestamp":"2026-09-14T00:00:00Z","attachments":[]},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}],"reactions":[{"count":2,"me":true,"emoji":{"id":null,"name":"👍"}},{"count":1,"me":false,"emoji":{"id":"9001","name":"party"}}]}`
 	forward := strings.Replace(rich, `"message_reference":{"message_id":"777"}`, `"message_reference":{"type":1,"message_id":"888","channel_id":"999"}`, 1)
 	old := strings.Replace(forward, "9007199254740993", "9007199254740992", 1)
+	starter := strings.NewReplacer("9007199254740993", "9007199254740991", `"message_id":"777"`, `"message_id":"778","channel_id":"455"`, `"id":"777"`, `"id":"778"`, `"content":"first`, `"type":21,"content":"first`).Replace(rich)
 	for _, operation := range []string{"list", "get"} {
 		t.Run(operation, func(t *testing.T) {
 			args := []string{"messages", operation, "456"}
-			count := 2
+			count := 3
 			if operation == "get" {
 				args = append(args, "9007199254740993")
 				count = 1
@@ -97,7 +98,7 @@ func TestMessageTranscripts(t *testing.T) {
 				if operation == "get" {
 					io.WriteString(w, "["+rich+"]")
 				} else {
-					io.WriteString(w, "["+rich+","+old+"]")
+					io.WriteString(w, "["+rich+","+old+","+starter+"]")
 				}
 			}), nil)
 			if code != 0 || errs != "" || strings.Contains(out, "synthetic.token.signature") {
@@ -111,10 +112,10 @@ func TestMessageTranscripts(t *testing.T) {
 			if strings.Contains(out, "\x1b") {
 				t.Fatal("terminal control sequence retained")
 			}
-			if count == 2 && (!strings.Contains(out, "forwarded_from: message=888 channel=999") || strings.Contains(out, "reply_to: 888")) {
-				t.Fatalf("forward labeled as a reply: %s", out)
+			if count == 3 && (!strings.Contains(out, "forwarded_from: message=888 channel=999") || !strings.Contains(out, "thread_starter: message=778 channel=455\n  > ") || strings.Contains(out, "reply_to: 888") || strings.Contains(out, "reply_to: 778")) {
+				t.Fatalf("forward or thread starter labeled as a reply: %s", out)
 			}
-			if count == 2 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
+			if count == 3 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
 				t.Fatal("transcript is not chronological")
 			}
 		})
