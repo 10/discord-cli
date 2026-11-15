@@ -25,7 +25,7 @@ func (c *ServersListCmd) Run(ctx *Context) error {
 }
 
 type ChannelsCmd struct {
-	List ChannelsListCmd `cmd:"" help:"List one server's channels by ID, including container types."`
+	List ChannelsListCmd `cmd:"" help:"List one server's channels, including container types."`
 }
 type ChannelsListCmd struct {
 	Server string `arg:"" help:"Server ID."`
@@ -44,7 +44,7 @@ func (c *ChannelsListCmd) Run(ctx *Context) error {
 }
 
 type DMsCmd struct {
-	List DMsListCmd `cmd:"" help:"List existing DMs and group DMs by ID; does not open conversations."`
+	List DMsListCmd `cmd:"" help:"List existing DMs and group DMs; does not open conversations."`
 	Open DMOpenCmd  `cmd:"" help:"Explicitly open a one-to-one DM for a user ID."`
 }
 type DMsListCmd struct {
