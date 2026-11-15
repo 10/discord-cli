@@ -198,6 +198,30 @@ func bounds(limit, max int, before, after string, exclusive bool) error {
 	return nil
 }
 
+type MessageMentionsCmd struct {
+	MessageOutput
+	Limit  int    `default:"25" help:"Maximum mentions (1–100)."`
+	Before string `help:"Read mentions before this message ID; use next_before to continue."`
+	Server string `help:"Only mentions in this server ID."`
+	Direct bool   `help:"Only mentions of this account; exclude role, @everyone, and @here mentions."`
+}
+
+func (c *MessageMentionsCmd) Validate() error {
+	if c.Server != "" {
+		if e := api.RequireIDs(c.Server); e != nil {
+			return e
+		}
+	}
+	return bounds(c.Limit, 100, c.Before, "", true)
+}
+func (c *MessageMentionsCmd) Run(ctx *Context) error {
+	v, e := ctx.Client.Mentions(c.Limit, c.Before, c.Server, c.Direct)
+	if e != nil {
+		return e
+	}
+	return c.MessageOutput.print(ctx, v)
+}
+
 type MessageGetCmd struct {
 	MessageOutput
 	Channel string `arg:"" help:"Channel ID."`

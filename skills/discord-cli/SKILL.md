@@ -61,9 +61,13 @@ discord messages list CHANNEL_ID --around MESSAGE_ID --limit 25
 discord messages list CHANNEL_ID --limit 500 --format transcript
 discord messages search --channel CHANNEL_ID --query "release" --author USER_ID
 discord messages search --server SERVER_ID --query "release"
+discord messages mentions --direct --format transcript
 discord reactions list CHANNEL_ID MESSAGE_ID
 discord reactions users CHANNEL_ID MESSAGE_ID '👍'
 ```
+
+To find what needs the owner's attention, start with `messages mentions --direct`
+and `dms list --sort recent`.
 
 Prefer `--format transcript` for reading conversation text. It sorts selected
 messages chronologically and retains IDs, reply references, embed text/fields,
@@ -100,6 +104,9 @@ For more context, keep the scope and filters and use the returned continuation:
 - **History:** newest-first `items`; `next_before` reads older messages,
   `next_after` reads newer ones. Omit `--around` when continuing in either direction.
 - **Servers / reaction users:** ascending IDs; pass `next_after` as `--after`.
+- **Mentions:** newest-first `items` from any channel, covering about a week;
+  keep `--direct`/`--server` and pass `next_before` as `--before`. Use each
+  item's `channel_id` for follow-up reads; `guild_id` names its server.
 - **Search:** `items` follow the selected `--sort` (default newest); preserve
   the same sort and filters and pass `next_offset` as `--offset`.
 - **Active threads:** descending thread IDs; preserve the parent channel and pass

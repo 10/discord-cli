@@ -34,12 +34,13 @@ type Root struct {
 	Timeout time.Duration    `default:"60s" help:"Total command deadline, including authentication and transfers."`
 }
 type MessagesCmd struct {
-	List   MessageListCmd   `cmd:"" help:"Read up to --limit messages, newest first; fetch additional pages automatically."`
-	Get    MessageGetCmd    `cmd:"" help:"Read exactly one message."`
-	Search MessageSearchCmd `cmd:"" help:"Search exactly one server or conversation; inspect complete and has_more."`
-	Send   MessageSendCmd   `cmd:"" help:"Send text, a reply, or explicit files."`
-	Edit   MessageEditCmd   `cmd:"" help:"Edit own message text or explicitly add/remove attachments."`
-	Delete MessageDeleteCmd `cmd:"" help:"Delete a message where Discord permits; no confirmation prompt."`
+	List     MessageListCmd     `cmd:"" help:"Read up to --limit messages, newest first; fetch additional pages automatically."`
+	Get      MessageGetCmd      `cmd:"" help:"Read exactly one message."`
+	Search   MessageSearchCmd   `cmd:"" help:"Search exactly one server or conversation; inspect complete and has_more."`
+	Mentions MessageMentionsCmd `cmd:"" help:"Read recent messages that mention this account, newest first; Discord keeps about a week."`
+	Send     MessageSendCmd     `cmd:"" help:"Send text, a reply, or explicit files."`
+	Edit     MessageEditCmd     `cmd:"" help:"Edit own message text or explicitly add/remove attachments."`
+	Delete   MessageDeleteCmd   `cmd:"" help:"Delete a message where Discord permits; no confirmation prompt."`
 }
 type Context struct {
 	DownloadTransport   http.RoundTripper

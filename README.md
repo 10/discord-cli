@@ -32,6 +32,7 @@ message action. Examples use placeholder IDs and illustrative output.
 
 - **Find conversations** — list servers, channels, active threads, forum posts, thread archives, DMs, and friends, or open a one-to-one DM by user ID.
 - **Read and search** — page through history, read context around a message, retrieve an exact message, or filter one server or conversation by text, authors, mentions, content type, author type, pins, and dates.
+- **Recent mentions** — read the last week of messages that mention you across servers, optionally only direct mentions in one server.
 - **Read with agents** — request more messages with `--limit` and render chronological transcripts with explicit coverage.
 - **Send and edit** — write text, reply to a message, attach files, and edit or delete messages where permitted.
 - **Reactions** — inspect counts and participants, add emoji, and remove your own or another user's reaction where permitted.
@@ -64,6 +65,7 @@ discord messages get CHANNEL_ID MESSAGE_ID
 discord messages list CHANNEL_ID --around MESSAGE_ID --limit 25
 discord messages search --channel CHANNEL_ID --query "release" --limit 25
 discord messages search --server SERVER_ID --author USER_ID --query "release"
+discord messages mentions --direct --limit 25
 ```
 
 Replace `SERVER_ID`, `CHANNEL_ID`, and other placeholders with IDs returned by
@@ -96,16 +98,17 @@ discord messages list CHANNEL_ID --around MESSAGE_ID --format transcript
 discord messages list CHANNEL_ID --limit 500 > history.json
 ```
 
-Use `--format transcript` on `messages list`, `get`, or `search` for a compact
-chronological view. It includes message/channel/author IDs (marking bots),
-timestamps, edit times, non-default message types (such as `type=6` for a pin
-notice), references labeled `reply_to:`, `forwarded_from:`, `thread_starter:`,
-or `references:`, message text, embed titles/descriptions/fields, attachment
-references, mentioned users, reaction counts, and received components, polls,
-forwarded snapshots, and stickers. A reply or thread starter quotes its original
-message once, when Discord returns it and the transcript lacks it. Terminal
-control characters are replaced. Use the default JSON for the complete received
-message schema. Calendar filters remain available through `messages search`.
+Use `--format transcript` on `messages list`, `get`, `search`, or `mentions` for
+a compact chronological view. It includes message/channel/author IDs (marking
+bots), timestamps, edit times, non-default message types (such as `type=6` for a
+pin notice), references labeled `reply_to:`, `forwarded_from:`,
+`thread_starter:`, or `references:`, message text, embed
+titles/descriptions/fields, attachment references, mentioned users, reaction
+counts, and received components, polls, forwarded snapshots, and stickers. A
+reply or thread starter quotes its original message once, when Discord returns
+it and the transcript lacks it. Terminal control characters are replaced. Use
+the default JSON for the complete received message schema. Calendar filters
+remain available through `messages search`.
 
 Transcripts end with `[coverage]` followed by JSON metadata. Check `has_more`
 and `complete`: `has_more` is conservative when the requested limit is filled;
@@ -301,12 +304,13 @@ normal error without a manifest.
 | `servers list` | 100 (max 200) | `--after NEXT_AFTER` |
 | `messages list` | 50 (max 10,000; around max 100) | `--before NEXT_BEFORE` for older messages, or `--after NEXT_AFTER` for newer |
 | `messages search` | 25 (max 25) | Same filters and `--offset NEXT_OFFSET` |
+| `messages mentions` | 25 (max 100) | Same filters and `--before NEXT_BEFORE` |
 | `reactions users` | 50 (max 100) | `--after NEXT_AFTER` |
 | `threads list` | 25 (max 25) | `--before NEXT_BEFORE` (thread ID) |
 | `threads archived` | 50 (max 100) | Same archive type and `--before NEXT_BEFORE` (timestamp or thread ID, depending on type) |
 
-History returns messages newest first; search defaults to newest first and
-supports `--sort oldest` or `--sort relevance`. Servers and reaction
+History and mentions return messages newest first; search defaults to newest
+first and supports `--sort oldest` or `--sort relevance`. Servers and reaction
 participants use ascending IDs. Active and joined-private archived threads use
 descending IDs; public/private archives use descending archive timestamps.
 Channels, DMs, and friends return one bounded API response, sorted by ID;
