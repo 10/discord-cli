@@ -106,7 +106,7 @@ For more context, keep the scope and filters and use the returned continuation:
 - **Servers / reaction users:** ascending IDs; pass `next_after` as `--after`.
 - **Mentions:** newest-first `items` from any channel, covering about a week;
   keep `--direct`/`--server` and pass `next_before` as `--before`. Use each
-  item's `channel_id` for follow-up reads.
+  item's `channel_id` for follow-up reads; `guild_id` names its server.
 - **Search:** `items` follow the selected `--sort` (default newest); preserve
   the same sort and filters and pass `next_offset` as `--offset`.
 - **Active threads:** descending thread IDs; preserve the parent channel and pass

@@ -46,6 +46,7 @@ type Reference struct {
 type Message struct {
 	ID                string          `json:"id"`
 	ChannelID         string          `json:"channel_id"`
+	ServerID          string          `json:"guild_id,omitempty"`
 	Author            User            `json:"author"`
 	Content           string          `json:"content"`
 	Timestamp         string          `json:"timestamp"`
@@ -111,7 +112,7 @@ func validAttachment(a Attachment) bool {
 }
 
 func validMessage(m Message) bool {
-	if !ID(m.ID) || !ID(m.ChannelID) || !ID(m.Author.ID) {
+	if !ID(m.ID) || !ID(m.ChannelID) || !ID(m.Author.ID) || (m.ServerID != "" && !ID(m.ServerID)) {
 		return false
 	}
 	if _, e := time.Parse(time.RFC3339Nano, m.Timestamp); e != nil {

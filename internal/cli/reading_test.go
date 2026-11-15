@@ -305,7 +305,7 @@ func TestRecentMentions(t *testing.T) {
 			t.Errorf("unexpected request %s", r.URL)
 		}
 		query = r.URL.RawQuery
-		older := strings.NewReplacer("9007199254740993", "1300", `"channel_id":"456"`, `"channel_id":"457"`).Replace(sampleMessage)
+		older := strings.NewReplacer("9007199254740993", "1300", `"channel_id":"456"`, `"channel_id":"457","guild_id":"123"`).Replace(sampleMessage)
 		newer := strings.Replace(sampleMessage, "9007199254740993", "1301", 1)
 		io.WriteString(w, "["+older+","+newer+"]")
 	}), nil)
@@ -313,6 +313,7 @@ func TestRecentMentions(t *testing.T) {
 		Items []struct {
 			ID      string
 			Channel string `json:"channel_id"`
+			Server  string `json:"guild_id"`
 		}
 		HasMore bool   `json:"has_more"`
 		Before  string `json:"next_before"`
@@ -321,7 +322,7 @@ func TestRecentMentions(t *testing.T) {
 		t.Fatalf("%d %s %s query=%s", code, out, errs, query)
 	}
 	// Mentions span channels; each keeps its own channel ID for follow-up reads.
-	if len(result.Items) != 2 || result.Items[0].ID != "1301" || result.Items[1].Channel != "457" || !result.HasMore || result.Before != "1300" {
+	if len(result.Items) != 2 || result.Items[0].ID != "1301" || result.Items[1].Channel != "457" || result.Items[1].Server != "123" || !result.HasMore || result.Before != "1300" {
 		t.Fatalf("wrong order or continuation: %s", out)
 	}
 }
