@@ -29,11 +29,17 @@ type ChannelsCmd struct {
 }
 type ChannelsListCmd struct {
 	Server string `arg:"" help:"Server ID."`
+	ChannelOrder
+}
+
+// ChannelOrder selects between stable ID order and latest activity.
+type ChannelOrder struct {
+	Sort string `default:"id" enum:"id,recent" help:"Order: id (ascending) or recent (latest message first)."`
 }
 
 func (c *ChannelsListCmd) Validate() error { return api.RequireIDs(c.Server) }
 func (c *ChannelsListCmd) Run(ctx *Context) error {
-	v, e := ctx.Client.Channels(c.Server, false, false)
+	v, e := ctx.Client.Channels(c.Server, false, c.Sort == "recent")
 	return ctx.Result(v, e)
 }
 
@@ -42,7 +48,7 @@ type DMsCmd struct {
 	Open DMOpenCmd  `cmd:"" help:"Explicitly open a one-to-one DM for a user ID."`
 }
 type DMsListCmd struct {
-	Sort string `default:"id" enum:"id,recent" help:"Order: id (ascending) or recent (latest message first)."`
+	ChannelOrder
 }
 
 func (c *DMsListCmd) Run(ctx *Context) error {

@@ -310,7 +310,7 @@ supports `--sort oldest` or `--sort relevance`. Servers and reaction
 participants use ascending IDs. Active and joined-private archived threads use
 descending IDs; public/private archives use descending archive timestamps.
 Channels, DMs, and friends return one bounded API response, sorted by ID;
-`dms list --sort recent` puts the conversation with the latest message first.
+`--sort recent` on `dms list` or `channels list` puts the latest message first.
 
 **Check `has_more` and `complete` even on exit 0.** `has_more` is conservative
 when a page fills its limit. `complete` describes the page or search-index

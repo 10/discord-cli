@@ -30,7 +30,7 @@ concluding that a command is unavailable.
 
    | Destination | Discovery |
    | --- | --- |
-   | Server channel | `servers list`, then `channels list SERVER_ID` |
+   | Server channel | `servers list`, then `channels list SERVER_ID`; `--sort recent` lists active channels first |
    | Active thread or forum post | `channels list SERVER_ID`, then `threads list PARENT_CHANNEL_ID` |
    | Archived thread or forum post | `threads archived PARENT_CHANNEL_ID`; choose `--type public`, `private`, or `joined-private` |
    | Existing DM or group DM | `dms list`; match `recipients` by user ID, or use `--sort recent` for the latest conversations first |
