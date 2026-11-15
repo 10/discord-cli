@@ -181,6 +181,9 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 			for i, r := range m.Reactions {
 				emoji := r.Emoji.Name
 				if r.Emoji.ID != nil {
+					if emoji == "" {
+						emoji = "emoji" // Deleted custom emoji arrive without a name.
+					}
 					emoji += ":" + *r.Emoji.ID
 				}
 				counts[i] = fmt.Sprintf("%s %d", emoji, r.Count)
