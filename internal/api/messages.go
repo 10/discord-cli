@@ -72,6 +72,22 @@ type Message struct {
 	Thread           json.RawMessage `json:"thread,omitempty"`
 }
 
+// Files returns the message's attachments, then those of its forwarded snapshots.
+func (m Message) Files() []Attachment {
+	files := append([]Attachment(nil), m.Attachments...)
+	var snapshots []struct {
+		Message struct {
+			Attachments []Attachment `json:"attachments"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(m.MessageSnapshots, &snapshots) == nil {
+		for _, s := range snapshots {
+			files = append(files, s.Message.Attachments...)
+		}
+	}
+	return files
+}
+
 func validMessage(m Message) bool {
 	if !ID(m.ID) || !ID(m.ChannelID) || !ID(m.Author.ID) {
 		return false

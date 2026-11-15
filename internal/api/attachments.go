@@ -63,9 +63,10 @@ func (c *Client) Download(ctx context.Context, channel, message, attachment, dir
 		return nil, err
 	}
 	var selected *Attachment
-	for i := range m.Attachments {
-		if m.Attachments[i].ID == attachment {
-			selected = &m.Attachments[i]
+	files := m.Files()
+	for i := range files {
+		if files[i].ID == attachment {
+			selected = &files[i]
 			break
 		}
 	}
@@ -187,7 +188,11 @@ func (c *Client) DownloadMany(ctx context.Context, channel string, messages []st
 			record(id, "", err)
 			continue
 		}
-		for _, a := range m.Attachments {
+		for _, a := range m.Files() {
+			if !ID(a.ID) {
+				record(id, "", Upstream())
+				continue
+			}
 			subdir := filepath.Join(id, a.ID)
 			if err := root.MkdirAll(subdir, 0700); err != nil {
 				record(id, a.ID, err)

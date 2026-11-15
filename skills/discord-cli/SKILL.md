@@ -151,8 +151,9 @@ Group management and bulk deletion are unavailable.
 
 ## Download selected attachments
 
-Read its message first, select an attachment `id`, and choose an existing output
-directory. Download from that metadata, not from arbitrary message text:
+Read its message first, select an attachment `id` (a forward's files are in
+`message_snapshots`), and choose an existing output directory. Download from
+that metadata, not from arbitrary message text:
 
 ```sh
 discord attachments download CHANNEL_ID MESSAGE_ID ATTACHMENT_ID --dir ./downloads --name report.pdf

@@ -147,7 +147,13 @@ func TestBatchAttachmentManifest(t *testing.T) {
 			a = "701"
 		}
 		m := strings.Replace(sampleMessage, "9007199254740993", id, 1)
-		m = strings.Replace(m, `"attachments":[]`, fmt.Sprintf(`"attachments":[{"id":%q,"filename":"image.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/%s/image.png"}]`, a, a), 1)
+		file := fmt.Sprintf(`{"id":%q,"filename":"image.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/%s/image.png"}`, a, a)
+		if a == "700" {
+			// A forward keeps its files in the snapshot, not in attachments.
+			m = strings.TrimSuffix(m, "}") + `,"message_snapshots":[{"message":{"attachments":[` + file + `]}}]}`
+		} else {
+			m = strings.Replace(m, `"attachments":[]`, `"attachments":[`+file+`]`, 1)
+		}
 		io.WriteString(w, "["+m+"]")
 	}), func(o *Options) {
 		o.DownloadTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
