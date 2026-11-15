@@ -100,11 +100,11 @@ Use `--format transcript` on `messages list`, `get`, or `search` for a compact
 chronological view. It includes message/channel/author IDs, timestamps, edit
 times, non-default message types (such as `type=6` for a pin notice), reply
 references, message text, embed titles/descriptions/fields, attachment
-references, reaction counts, and received components, polls, forwarded
-snapshots, and stickers. A reply or thread starter quotes its original message
-once, when Discord returns it and the transcript lacks it. Terminal control
-characters are replaced. Use the default JSON for the complete received message
-schema. Calendar filters remain available through `messages search`.
+references, mentioned users, reaction counts, and received components, polls,
+forwarded snapshots, and stickers. A reply or thread starter quotes its original
+message once, when Discord returns it and the transcript lacks it. Terminal
+control characters are replaced. Use the default JSON for the complete received
+message schema. Calendar filters remain available through `messages search`.
 
 Transcripts end with `[coverage]` followed by JSON metadata. Check `has_more`
 and `complete`: `has_more` is conservative when the requested limit is filled;

@@ -71,13 +71,14 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		}, value)
 		fmt.Fprintf(&out, "  %s\n", strings.ReplaceAll(value, "\n", "\n  "))
 	}
-	author := func(m api.Message) string {
-		name := m.Author.Username
-		if m.Author.GlobalName != nil && *m.Author.GlobalName != "" {
-			name = *m.Author.GlobalName
+	who := func(u api.User) string {
+		name := u.Username
+		if u.GlobalName != nil && *u.GlobalName != "" {
+			name = *u.GlobalName
 		}
-		return fmt.Sprintf("[%s] %q (@%q; user=%s)", m.Timestamp, name, m.Author.Username, m.Author.ID)
+		return fmt.Sprintf("%q (@%q; user=%s)", name, u.Username, u.ID)
 	}
+	author := func(m api.Message) string { return "[" + m.Timestamp + "] " + who(m.Author) }
 	attachment := func(label string, a api.Attachment) {
 		text(label, fmt.Sprintf("%q id=%s type=%q size=%d", a.Filename, a.ID, a.ContentType, a.Size))
 	}
@@ -163,6 +164,14 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 			if len(field.value) > 0 && string(field.value) != "null" && string(field.value) != "[]" {
 				text(field.name+": ", string(field.value))
 			}
+		}
+		var mentions []api.User
+		if json.Unmarshal(m.Mentions, &mentions) == nil && len(mentions) > 0 {
+			names := make([]string, len(mentions))
+			for i, u := range mentions {
+				names[i] = who(u)
+			}
+			text("mentions: ", strings.Join(names, ", "))
 		}
 		if len(m.Reactions) > 0 {
 			counts := make([]string, len(m.Reactions))
