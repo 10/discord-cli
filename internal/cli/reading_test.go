@@ -81,7 +81,7 @@ func TestHistoryPagination(t *testing.T) {
 }
 
 func TestMessageTranscripts(t *testing.T) {
-	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}]}`
+	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"referenced_message":{"id":"777","channel_id":"456","author":{"id":"222","username":"asker"},"content":"Original question","timestamp":"2026-09-14T00:00:00Z","attachments":[]},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}]}`
 	forward := strings.Replace(rich, `"message_reference":{"message_id":"777"}`, `"message_reference":{"type":1,"message_id":"888","channel_id":"999"}`, 1)
 	old := strings.Replace(forward, "9007199254740993", "9007199254740992", 1)
 	for _, operation := range []string{"list", "get"} {
@@ -103,7 +103,7 @@ func TestMessageTranscripts(t *testing.T) {
 			if code != 0 || errs != "" || strings.Contains(out, "synthetic.token.signature") {
 				t.Fatalf("%d %s %s", code, out, errs)
 			}
-			for _, want := range []string{"first line", "[REDACTED]", "reply_to: 777", "embed: Release", "Build ready", "Status: Passed", "attachment:", "Component text", "Ship?", "Forwarded text", "[coverage]", `"order":"oldest_first"`, `"message_count":` + strconv.Itoa(count)} {
+			for _, want := range []string{"first line", "[REDACTED]", "reply_to: 777\n  > [2026-09-14T00:00:00Z] \"asker\"", "  > Original question", "embed: Release", "Build ready", "Status: Passed", "attachment:", "Component text", "Ship?", "Forwarded text", "[coverage]", `"order":"oldest_first"`, `"message_count":` + strconv.Itoa(count)} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q: %s", want, out)
 				}

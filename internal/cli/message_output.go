@@ -70,17 +70,39 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		}, value)
 		fmt.Fprintf(&out, "  %s\n", strings.ReplaceAll(value, "\n", "\n  "))
 	}
-	for _, m := range items {
+	author := func(m api.Message) string {
 		name := m.Author.Username
 		if m.Author.GlobalName != nil && *m.Author.GlobalName != "" {
 			name = *m.Author.GlobalName
 		}
-		fmt.Fprintf(&out, "[%s] %q (@%q; user=%s) message=%s channel=%s\n", m.Timestamp, name, m.Author.Username, m.Author.ID, m.ID, m.ChannelID)
+		return fmt.Sprintf("[%s] %q (@%q; user=%s)", m.Timestamp, name, m.Author.Username, m.Author.ID)
+	}
+	attachment := func(label string, a api.Attachment) {
+		text(label, fmt.Sprintf("%q id=%s type=%q size=%d", a.Filename, a.ID, a.ContentType, a.Size))
+	}
+	// Quote a replied-to message once, only when the transcript lacks it.
+	quoted := map[string]bool{}
+	for _, m := range items {
+		quoted[m.ID] = true
+	}
+	for _, m := range items {
+		fmt.Fprintf(&out, "%s message=%s channel=%s\n", author(m), m.ID, m.ChannelID)
 		if m.Reference != nil && m.Reference.MessageID != "" {
 			if m.Reference.Type == 1 {
 				text("forwarded_from: ", fmt.Sprintf("message=%s channel=%s", m.Reference.MessageID, m.Reference.ChannelID))
 			} else {
 				text("reply_to: ", m.Reference.MessageID)
+				var original api.Message
+				if !quoted[m.Reference.MessageID] && json.Unmarshal(m.ReferencedMessage, &original) == nil && original.ID == m.Reference.MessageID {
+					quoted[original.ID] = true
+					text("> ", author(original))
+					if original.Content != "" {
+						text("> ", strings.ReplaceAll(original.Content, "\n", "\n> "))
+					}
+					for _, a := range original.Attachments {
+						attachment("> attachment: ", a)
+					}
+				}
 			}
 		}
 		if m.Content != "" {
@@ -114,7 +136,7 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 			text("embeds: ", string(m.Embeds))
 		}
 		for _, a := range m.Attachments {
-			text("attachment: ", fmt.Sprintf("%q id=%s type=%q size=%d", a.Filename, a.ID, a.ContentType, a.Size))
+			attachment("attachment: ", a)
 		}
 		for _, field := range []struct {
 			name  string

@@ -67,7 +67,8 @@ discord reactions users CHANNEL_ID MESSAGE_ID '👍'
 
 Prefer `--format transcript` for reading conversation text. It sorts selected
 messages chronologically and retains IDs, reply references, embed text/fields,
-and attachment references. It ends with `[coverage]` plus JSON metadata. Use
+and attachment references. Replies to messages outside the transcript quote the
+original once when Discord returns it. It ends with `[coverage]` plus JSON metadata. Use
 default JSON for the full received schema. These formats also work on exact
 reads and search; transcript search results are reordered chronologically.
 
