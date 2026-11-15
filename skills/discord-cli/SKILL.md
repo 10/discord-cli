@@ -188,7 +188,7 @@ pipelines; `$LASTEXITCODE` in PowerShell). Help/version are text exceptions.
 | `desktop_missing`, `desktop_locked`, `desktop_unavailable`, `desktop_unsupported` (exit 3) | Follow the native sign-in/access/storage guidance. Windows Stable 1.0.9257 acceptance required Discord closed; a consistency error may require the owner to quit it normally, then retry. |
 | `authentication_failed`, `ambiguous_account`, `config_error` | Resolve the selected source; preserve explicit overrides unless the user requests changing them. |
 | `permission_denied`, `user_action_required` (exit 3) | Stop the action. Report the permission denial or required desktop verification; do not work around it. |
-| `not_found`, `attachment_unavailable` (exit 4) | Recheck the selected IDs or refresh attachment metadata. |
+| `not_found`, `attachment_unavailable` (exit 4) | The message names the missing channel, message, or attachment ID; recheck that ID or refresh attachment metadata. |
 | `rate_limited` (exit 5), `indexing_delay` (exit 1) | The CLI already waits/retries within its deadline. Respect `retry_after` and the task budget; an indexing delay is not an empty search. |
 | `uncertain_write` (exit 1) | Do not automatically resend. Inspect bounded recent history in the same destination to reconcile; report uncertainty if the evidence is inconclusive. |
 | `network_failure`, `cancelled`, `invalid_upstream_data` (exit 1) | Report the failure; discard unsuccessful output. Retry reads only within the task budget. |

@@ -70,7 +70,7 @@ func (c *Client) Download(ctx context.Context, channel, message, attachment, dir
 		}
 	}
 	if selected == nil {
-		return nil, HTTPFailure(404)
+		return nil, notFound("This message has no attachment with this ID; read the message again for current attachment IDs")
 	}
 	return downloadAttachment(ctx, channel, message, selected, dir, name, transport)
 }

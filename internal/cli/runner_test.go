@@ -166,13 +166,23 @@ func TestExactDMTarget(t *testing.T) {
 
 const sampleMessage = `{"id":"9007199254740993","channel_id":"456","author":{"id":"111","username":"owner"},"content":"hello","timestamp":"2026-09-15T00:00:00Z","attachments":[],"reactions":[],"referenced_message":null}`
 
-func TestExactMessageRejectsNeighbor(t *testing.T) {
-	// Discord's around query returns nearby messages when the requested one is gone.
-	code, out, errs := invoke(t, []string{"messages", "get", "456", "9007199254740994"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "["+sampleMessage+"]")
-	}), nil)
-	if code != 4 || out != "" || !strings.Contains(errs, "not_found") {
-		t.Fatalf("%d %s %s", code, out, errs)
+func TestNotFoundNamesTheMissingID(t *testing.T) {
+	for _, tc := range []struct{ channel, want string }{
+		// Discord's around query returns nearby messages when the requested one is gone.
+		{"456", "no message with this ID"},
+		{"123", "not a server or message ID"},
+	} {
+		code, out, errs := invoke(t, []string{"messages", "get", tc.channel, "9007199254740994"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/channels/123" {
+				w.WriteHeader(404)
+				io.WriteString(w, `{"message":"Unknown Channel","code":10003}`)
+				return
+			}
+			io.WriteString(w, "["+sampleMessage+"]")
+		}), nil)
+		if code != 4 || out != "" || !strings.Contains(errs, "not_found") || !strings.Contains(errs, tc.want) {
+			t.Fatalf("%d %s %s", code, out, errs)
+		}
 	}
 }
 
