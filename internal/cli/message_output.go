@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/10/discord-cli/internal/api"
@@ -89,6 +90,11 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		fmt.Fprintf(&out, "%s message=%s channel=%s", author(m), m.ID, m.ChannelID)
 		if m.Type != nil && *m.Type != 0 && *m.Type != 19 {
 			fmt.Fprintf(&out, " type=%d", *m.Type)
+		}
+		if m.EditedTimestamp != nil {
+			if _, err := time.Parse(time.RFC3339Nano, *m.EditedTimestamp); err == nil {
+				fmt.Fprintf(&out, " edited=%s", *m.EditedTimestamp)
+			}
 		}
 		out.WriteByte('\n')
 		if ref := m.Reference; ref != nil && ref.MessageID != "" {
