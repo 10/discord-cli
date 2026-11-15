@@ -81,12 +81,14 @@ func TestHistoryPagination(t *testing.T) {
 }
 
 func TestMessageTranscripts(t *testing.T) {
-	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}]}`
-	old := strings.Replace(rich, "9007199254740993", "9007199254740992", 1)
+	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"referenced_message":{"id":"777","channel_id":"456","author":{"id":"222","username":"asker","bot":true},"content":"Original question synthetic.token.signature\u001b[31m","timestamp":"2026-09-14T00:00:00Z","attachments":[{"id":"701","filename":"synthetic.token.signature\u001b[31m.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/701/x.png"}]},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}],"reactions":[{"count":2,"me":true,"emoji":{"id":null,"name":"👍"}},{"count":1,"me":false,"emoji":{"id":"9001","name":"party"}},{"count":1,"me":false,"emoji":{"id":"9002","name":null}},{"count":1,"me":false,"emoji":{"id":null,"name":"synthetic.token.signature\u001b[31m"}}],"edited_timestamp":"2026-09-15T01:00:00Z","mentions":[{"id":"333","username":"alex","global_name":"Alex"},{"id":"334","username":"synthetic.token.signature","global_name":"\u001b[31mBo"}]}`
+	forward := strings.Replace(rich, `"message_reference":{"message_id":"777"}`, `"message_reference":{"type":1,"message_id":"888","channel_id":"999"}`, 1)
+	old := strings.Replace(forward, "9007199254740993", "9007199254740992", 1)
+	starter := strings.NewReplacer("9007199254740993", "9007199254740991", `"message_id":"777"`, `"message_id":"778","channel_id":"455"`, `"id":"777"`, `"id":"778"`, `"content":"first`, `"type":21,"content":"first`).Replace(rich)
 	for _, operation := range []string{"list", "get"} {
 		t.Run(operation, func(t *testing.T) {
 			args := []string{"messages", operation, "456"}
-			count := 2
+			count := 3
 			if operation == "get" {
 				args = append(args, "9007199254740993")
 				count = 1
@@ -96,13 +98,13 @@ func TestMessageTranscripts(t *testing.T) {
 				if operation == "get" {
 					io.WriteString(w, "["+rich+"]")
 				} else {
-					io.WriteString(w, "["+rich+","+old+"]")
+					io.WriteString(w, "["+rich+","+old+","+starter+"]")
 				}
 			}), nil)
 			if code != 0 || errs != "" || strings.Contains(out, "synthetic.token.signature") {
 				t.Fatalf("%d %s %s", code, out, errs)
 			}
-			for _, want := range []string{"first line", "[REDACTED]", "reply_to: 777", "embed: Release", "Build ready", "Status: Passed", "attachment:", "Component text", "Ship?", "Forwarded text", "[coverage]", `"order":"oldest_first"`, `"message_count":` + strconv.Itoa(count)} {
+			for _, want := range []string{"first line", "[REDACTED]", "reply_to: 777\n  > [2026-09-14T00:00:00Z] \"asker\"", "  > Original question", `(@"asker"; user=222; bot)`, "embed: Release", "Build ready", "Status: Passed", "attachment:", "Component text", "Ship?", "Forwarded text", "reactions: 👍 2, party:9001 1, emoji:9002 1", `mentions: "Alex" (@"alex"; user=333)`, "channel=456 edited=2026-09-15T01:00:00Z\n", "[coverage]", `"order":"oldest_first"`, `"message_count":` + strconv.Itoa(count)} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q: %s", want, out)
 				}
@@ -110,10 +112,27 @@ func TestMessageTranscripts(t *testing.T) {
 			if strings.Contains(out, "\x1b") {
 				t.Fatal("terminal control sequence retained")
 			}
-			if count == 2 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
+			if count == 3 && (!strings.Contains(out, "forwarded_from: message=888 channel=999") || !strings.Contains(out, "message=9007199254740991 channel=456 type=21") || !strings.Contains(out, "thread_starter: message=778 channel=455\n  > ") || strings.Contains(out, "reply_to: 888") || strings.Contains(out, "reply_to: 778")) {
+				t.Fatalf("forward or thread starter labeled as a reply: %s", out)
+			}
+			if count == 3 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
 				t.Fatal("transcript is not chronological")
 			}
 		})
+	}
+}
+
+func TestTranscriptQuotesEachOriginalOnce(t *testing.T) {
+	reply := func(id, original, text string) string {
+		return strings.TrimSuffix(strings.Replace(sampleMessage, "9007199254740993", id, 1), "}") + fmt.Sprintf(`,"type":19,"message_reference":{"message_id":%q},"referenced_message":{"id":%q,"channel_id":"456","author":{"id":"222","username":"asker"},"content":%q,"timestamp":"2026-09-14T00:00:00Z"}}`, original, original, text)
+	}
+	anchor := strings.Replace(sampleMessage, "9007199254740993", "1001", 1)
+	code, out, errs := invoke(t, []string{"messages", "list", "456", "--format", "transcript"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "["+strings.Join([]string{reply("1004", "900", "older"), reply("1003", "900", "older"), reply("1002", "1001", "hello"), anchor}, ",")+"]")
+	}), nil)
+	// The original of 1002 is in the window, and 1004 repeats 1003's original.
+	if code != 0 || errs != "" || strings.Count(out, "  > ") != 2 || strings.Count(out, "  > older") != 1 {
+		t.Fatalf("%d %s %s", code, out, errs)
 	}
 }
 

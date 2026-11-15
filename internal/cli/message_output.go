@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/10/discord-cli/internal/api"
@@ -70,14 +71,59 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		}, value)
 		fmt.Fprintf(&out, "  %s\n", strings.ReplaceAll(value, "\n", "\n  "))
 	}
-	for _, m := range items {
-		name := m.Author.Username
-		if m.Author.GlobalName != nil && *m.Author.GlobalName != "" {
-			name = *m.Author.GlobalName
+	who := func(u api.User) string {
+		name := u.Username
+		if u.GlobalName != nil && *u.GlobalName != "" {
+			name = *u.GlobalName
 		}
-		fmt.Fprintf(&out, "[%s] %q (@%q; user=%s) message=%s channel=%s\n", m.Timestamp, name, m.Author.Username, m.Author.ID, m.ID, m.ChannelID)
-		if m.Reference != nil && m.Reference.MessageID != "" {
-			text("reply_to: ", m.Reference.MessageID)
+		if u.Bot {
+			return fmt.Sprintf("%q (@%q; user=%s; bot)", name, u.Username, u.ID)
+		}
+		return fmt.Sprintf("%q (@%q; user=%s)", name, u.Username, u.ID)
+	}
+	author := func(m api.Message) string { return "[" + m.Timestamp + "] " + who(m.Author) }
+	attachment := func(label string, a api.Attachment) {
+		text(label, fmt.Sprintf("%q id=%s type=%q size=%d", a.Filename, a.ID, a.ContentType, a.Size))
+	}
+	// Quote a referenced message once, only when the transcript lacks it.
+	quoted := map[string]bool{}
+	for _, m := range items {
+		quoted[m.ID] = true
+	}
+	for _, m := range items {
+		fmt.Fprintf(&out, "%s message=%s channel=%s", author(m), m.ID, m.ChannelID)
+		if m.Type != nil && *m.Type != 0 && *m.Type != 19 {
+			fmt.Fprintf(&out, " type=%d", *m.Type)
+		}
+		if m.EditedTimestamp != nil {
+			if _, err := time.Parse(time.RFC3339Nano, *m.EditedTimestamp); err == nil {
+				fmt.Fprintf(&out, " edited=%s", *m.EditedTimestamp)
+			}
+		}
+		out.WriteByte('\n')
+		if ref := m.Reference; ref != nil && ref.MessageID != "" {
+			source := fmt.Sprintf("message=%s channel=%s", ref.MessageID, ref.ChannelID)
+			switch {
+			case ref.Type == 1:
+				text("forwarded_from: ", source)
+			case m.Type == nil || *m.Type == 19:
+				text("reply_to: ", ref.MessageID)
+			case *m.Type == 21:
+				text("thread_starter: ", source)
+			default:
+				text("references: ", source)
+			}
+			var original api.Message
+			if !quoted[ref.MessageID] && json.Unmarshal(m.ReferencedMessage, &original) == nil && original.ID == ref.MessageID {
+				quoted[original.ID] = true
+				text("> ", author(original))
+				if original.Content != "" {
+					text("> ", strings.ReplaceAll(original.Content, "\n", "\n> "))
+				}
+				for _, a := range original.Attachments {
+					attachment("> attachment: ", a)
+				}
+			}
 		}
 		if m.Content != "" {
 			text("", m.Content)
@@ -110,7 +156,7 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 			text("embeds: ", string(m.Embeds))
 		}
 		for _, a := range m.Attachments {
-			text("attachment: ", fmt.Sprintf("%q id=%s type=%q size=%d", a.Filename, a.ID, a.ContentType, a.Size))
+			attachment("attachment: ", a)
 		}
 		for _, field := range []struct {
 			name  string
@@ -121,6 +167,28 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 			if len(field.value) > 0 && string(field.value) != "null" && string(field.value) != "[]" {
 				text(field.name+": ", string(field.value))
 			}
+		}
+		var mentions []api.User
+		if json.Unmarshal(m.Mentions, &mentions) == nil && len(mentions) > 0 {
+			names := make([]string, len(mentions))
+			for i, u := range mentions {
+				names[i] = who(u)
+			}
+			text("mentions: ", strings.Join(names, ", "))
+		}
+		if len(m.Reactions) > 0 {
+			counts := make([]string, len(m.Reactions))
+			for i, r := range m.Reactions {
+				emoji := r.Emoji.Name
+				if r.Emoji.ID != nil {
+					if emoji == "" {
+						emoji = "emoji" // Deleted custom emoji arrive without a name.
+					}
+					emoji += ":" + *r.Emoji.ID
+				}
+				counts[i] = fmt.Sprintf("%s %d", emoji, r.Count)
+			}
+			text("reactions: ", strings.Join(counts, ", "))
 		}
 		out.WriteByte('\n')
 	}

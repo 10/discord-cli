@@ -97,9 +97,13 @@ discord messages list CHANNEL_ID --limit 500 > history.json
 ```
 
 Use `--format transcript` on `messages list`, `get`, or `search` for a compact
-chronological view. It includes message/channel/author IDs, timestamps, reply
-references, message text, embed titles/descriptions/fields, attachment references,
-and received components, polls, forwarded snapshots, and stickers. Terminal
+chronological view. It includes message/channel/author IDs (marking bots),
+timestamps, edit times, non-default message types (such as `type=6` for a pin
+notice), references labeled `reply_to:`, `forwarded_from:`, `thread_starter:`,
+or `references:`, message text, embed titles/descriptions/fields, attachment
+references, mentioned users, reaction counts, and received components, polls,
+forwarded snapshots, and stickers. A reply or thread starter quotes its original
+message once, when Discord returns it and the transcript lacks it. Terminal
 control characters are replaced. Use the default JSON for the complete received
 message schema. Calendar filters remain available through `messages search`.
 
@@ -224,14 +228,14 @@ versions and storage formats have not been verified natively.
 ## Messages and files
 
 Message results preserve received embeds, component trees, forwarded snapshots,
-polls, stickers, mentions, pin state, message type/flags, webhook identity, and
-thread metadata. Attachments also include available descriptions, titles, and
-audio/video metadata. These fields accompany the original `content`; nested
-content is not flattened into text or fetched separately. Missing nested fields
-remain absent, while explicit `null` and empty arrays are preserved. This applies
-to history, exact reads, search hits, and send/edit results. Reading these fields
-does not add commands for creating polls, sending stickers, or interacting with
-components.
+polls, stickers, mentions, pin state, message type/flags, webhook identity, bot
+authors (`author.bot`), and thread metadata. Attachments also include available
+descriptions, titles, and audio/video metadata. These fields accompany the
+original `content`; nested content is not flattened into text or fetched
+separately. Missing nested fields remain absent, while explicit `null` and empty
+arrays are preserved. This applies to history, exact reads, search hits, and
+send/edit results. Reading these fields does not add commands for creating
+polls, sending stickers, or interacting with components.
 
 These commands execute immediately, without a confirmation prompt:
 
