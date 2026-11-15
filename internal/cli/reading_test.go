@@ -196,20 +196,29 @@ func TestBatchAttachmentManifest(t *testing.T) {
 
 func TestDownloadFramingAndCeiling(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		length int64
-		body   string
-		exit   int
-		code   string
+		name      string
+		length    int64
+		body      string
+		exit      int
+		code      string
+		forwarded bool
 	}{
 		// Metadata can describe transformed bytes; the 3-byte size must not truncate the 5-byte original.
-		{"unknown length larger than metadata", -1, "hello", 0, ""},
-		{"oversized response", 1<<30 + 1, "", 1, "file_error"},
-		{"truncated response", 10, "hello", 1, "network_failure"},
+		{"unknown length larger than metadata", -1, "hello", 0, "", false},
+		{"oversized response", 1<<30 + 1, "", 1, "file_error", false},
+		{"truncated response", 10, "hello", 1, "network_failure", false},
+		{"forwarded attachment", 5, "hello", 0, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			code, out, errs := invoke(t, []string{"attachments", "download", "456", "9007199254740993", "700", "--dir", dir}, "", withAttachment(`{"id":"700","filename":"image.png","size":3,"content_type":"image/webp","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}`), func(o *Options) {
+			file := `{"id":"700","filename":"image.png","size":3,"content_type":"image/webp","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}`
+			handler := withAttachment(file)
+			if tc.forwarded {
+				handler = upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+					io.WriteString(w, "["+strings.TrimSuffix(sampleMessage, "}")+`,"message_snapshots":[{"message":{"attachments":[`+file+`]}}]}]`)
+				})
+			}
+			code, out, errs := invoke(t, []string{"attachments", "download", "456", "9007199254740993", "700", "--dir", dir}, "", handler, func(o *Options) {
 				o.DownloadTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body)), ContentLength: tc.length, Request: r}, nil
 				})
