@@ -112,7 +112,7 @@ func TestMessageTranscripts(t *testing.T) {
 			if strings.Contains(out, "\x1b") {
 				t.Fatal("terminal control sequence retained")
 			}
-			if count == 3 && (!strings.Contains(out, "forwarded_from: message=888 channel=999") || !strings.Contains(out, "thread_starter: message=778 channel=455\n  > ") || strings.Contains(out, "reply_to: 888") || strings.Contains(out, "reply_to: 778")) {
+			if count == 3 && (!strings.Contains(out, "forwarded_from: message=888 channel=999") || !strings.Contains(out, "message=9007199254740991 channel=456 type=21\n  thread_starter: message=778 channel=455\n  > ") || strings.Contains(out, "reply_to: 888") || strings.Contains(out, "reply_to: 778")) {
 				t.Fatalf("forward or thread starter labeled as a reply: %s", out)
 			}
 			if count == 3 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {

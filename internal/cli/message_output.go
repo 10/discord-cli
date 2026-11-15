@@ -86,7 +86,11 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		quoted[m.ID] = true
 	}
 	for _, m := range items {
-		fmt.Fprintf(&out, "%s message=%s channel=%s\n", author(m), m.ID, m.ChannelID)
+		fmt.Fprintf(&out, "%s message=%s channel=%s", author(m), m.ID, m.ChannelID)
+		if m.Type != nil && *m.Type != 0 && *m.Type != 19 {
+			fmt.Fprintf(&out, " type=%d", *m.Type)
+		}
+		out.WriteByte('\n')
 		if ref := m.Reference; ref != nil && ref.MessageID != "" {
 			source := fmt.Sprintf("message=%s channel=%s", ref.MessageID, ref.ChannelID)
 			switch {
