@@ -166,8 +166,14 @@ func TestExactDMTarget(t *testing.T) {
 
 func TestRecentConversations(t *testing.T) {
 	for _, args := range [][]string{{"dms", "list"}, {"channels", "list", "123"}} {
+		code, _, errs := invoke(t, append(args, "--sort", "recent"), "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `[{"id":"301","type":1,"last_message_id":"1300000000000000000"},{"id":"302","type":1,"last_message_id":"not-a-snowflake"}]`)
+		}), nil)
+		if code != 1 || !strings.Contains(errs, "invalid_upstream_data") {
+			t.Fatalf("malformed last_message_id ranked: %d %s", code, errs)
+		}
 		code, out, errs := invoke(t, append(args, "--sort", "recent"), "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
-			io.WriteString(w, `[{"id":"301","type":1,"last_message_id":null},{"id":"302","type":3,"last_message_id":"999999999999999999"},{"id":"303","type":1,"last_message_id":"1300000000000000000"},{"id":"300","type":1}]`)
+			io.WriteString(w, `[{"id":"301","type":1,"last_message_id":null},{"id":"302","type":3,"last_message_id":"999999999999999999"},{"id":"303","type":1,"last_message_id":"1300000000000000000"},{"id":"300","type":1},{"id":"304","type":1,"last_message_id":"9007199254740992"},{"id":"305","type":1,"last_message_id":"9007199254740993"}]`)
 		}), nil)
 		var result struct {
 			Items []struct{ ID string }
@@ -180,8 +186,9 @@ func TestRecentConversations(t *testing.T) {
 		for _, item := range result.Items {
 			ids = append(ids, item.ID)
 		}
-		// Longer IDs are newer; conversations without messages keep ascending IDs last.
-		if strings.Join(ids, ",") != "303,302,300,301" {
+		// Longer IDs are newer, IDs beyond float precision still order, and
+		// conversations without messages keep ascending IDs last.
+		if strings.Join(ids, ",") != "303,302,305,304,300,301" {
 			t.Fatalf("not latest message first: %s", out)
 		}
 	}

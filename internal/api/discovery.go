@@ -94,6 +94,11 @@ func (c *Client) Channels(server string, private, recent bool) (any, error) {
 			}
 			return *v.LastMessageID
 		}
+		for _, v := range items {
+			if id := last(v); id != "" && !ID(id) {
+				return nil, Upstream()
+			}
+		}
 		sort.SliceStable(items, func(i, j int) bool { return lessID(last(items[j]), last(items[i])) })
 	}
 	if items == nil {
