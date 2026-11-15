@@ -25,26 +25,34 @@ func (c *ServersListCmd) Run(ctx *Context) error {
 }
 
 type ChannelsCmd struct {
-	List ChannelsListCmd `cmd:"" help:"List one server's channels by ID, including container types."`
+	List ChannelsListCmd `cmd:"" help:"List one server's channels, including container types."`
 }
 type ChannelsListCmd struct {
 	Server string `arg:"" help:"Server ID."`
+	ChannelOrder
+}
+
+// ChannelOrder selects between stable ID order and latest activity.
+type ChannelOrder struct {
+	Sort string `default:"id" enum:"id,recent" help:"Order: id (ascending) or recent (latest message first)."`
 }
 
 func (c *ChannelsListCmd) Validate() error { return api.RequireIDs(c.Server) }
 func (c *ChannelsListCmd) Run(ctx *Context) error {
-	v, e := ctx.Client.Channels(c.Server, false)
+	v, e := ctx.Client.Channels(c.Server, false, c.Sort == "recent")
 	return ctx.Result(v, e)
 }
 
 type DMsCmd struct {
-	List DMsListCmd `cmd:"" help:"List existing DMs and group DMs by ID; does not open conversations."`
+	List DMsListCmd `cmd:"" help:"List existing DMs and group DMs; does not open conversations."`
 	Open DMOpenCmd  `cmd:"" help:"Explicitly open a one-to-one DM for a user ID."`
 }
-type DMsListCmd struct{}
+type DMsListCmd struct {
+	ChannelOrder
+}
 
 func (c *DMsListCmd) Run(ctx *Context) error {
-	v, e := ctx.Client.Channels("", true)
+	v, e := ctx.Client.Channels("", true, c.Sort == "recent")
 	return ctx.Result(v, e)
 }
 
