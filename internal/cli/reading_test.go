@@ -82,7 +82,8 @@ func TestHistoryPagination(t *testing.T) {
 
 func TestMessageTranscripts(t *testing.T) {
 	rich := strings.TrimSuffix(sampleMessage, "}") + `,"content":"first line\nsynthetic.token.signature\u001b[31m","message_reference":{"message_id":"777"},"embeds":[{"title":"Release","description":"Build ready","fields":[{"name":"Status","value":"Passed"}]}],"attachments":[{"id":"700","filename":"image.png","size":9,"content_type":"image/png","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}],"components":[{"type":10,"content":"Component text"}],"poll":{"question":{"text":"Ship?"}},"message_snapshots":[{"message":{"content":"Forwarded text"}}]}`
-	old := strings.Replace(rich, "9007199254740993", "9007199254740992", 1)
+	forward := strings.Replace(rich, `"message_reference":{"message_id":"777"}`, `"message_reference":{"type":1,"message_id":"888","channel_id":"999"}`, 1)
+	old := strings.Replace(forward, "9007199254740993", "9007199254740992", 1)
 	for _, operation := range []string{"list", "get"} {
 		t.Run(operation, func(t *testing.T) {
 			args := []string{"messages", operation, "456"}
@@ -109,6 +110,9 @@ func TestMessageTranscripts(t *testing.T) {
 			}
 			if strings.Contains(out, "\x1b") {
 				t.Fatal("terminal control sequence retained")
+			}
+			if count == 2 && (!strings.Contains(out, "forwarded_from: message=888 channel=999") || strings.Contains(out, "reply_to: 888")) {
+				t.Fatalf("forward labeled as a reply: %s", out)
 			}
 			if count == 2 && strings.Index(out, "message=9007199254740992") > strings.Index(out, "message=9007199254740993") {
 				t.Fatal("transcript is not chronological")

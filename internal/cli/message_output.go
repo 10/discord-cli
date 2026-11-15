@@ -77,7 +77,11 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 		}
 		fmt.Fprintf(&out, "[%s] %q (@%q; user=%s) message=%s channel=%s\n", m.Timestamp, name, m.Author.Username, m.Author.ID, m.ID, m.ChannelID)
 		if m.Reference != nil && m.Reference.MessageID != "" {
-			text("reply_to: ", m.Reference.MessageID)
+			if m.Reference.Type == 1 {
+				text("forwarded_from: ", fmt.Sprintf("message=%s channel=%s", m.Reference.MessageID, m.Reference.ChannelID))
+			} else {
+				text("reply_to: ", m.Reference.MessageID)
+			}
 		}
 		if m.Content != "" {
 			text("", m.Content)
