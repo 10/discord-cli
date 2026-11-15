@@ -139,15 +139,32 @@ func TestTranscriptQuotesEachOriginalOnce(t *testing.T) {
 func TestBatchAttachmentManifest(t *testing.T) {
 	dir := t.TempDir()
 	reads := 0
-	code, out, errs := invoke(t, []string{"attachments", "download-many", "456", "9007199254740993", "9007199254740994", "9007199254740993", "--dir", dir}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+	code, out, errs := invoke(t, []string{"attachments", "download-many", "456", "9007199254740993", "9007199254740994", "9007199254740993", "9007199254740995", "9007199254740996", "9007199254740997", "--dir", dir}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
 		reads++
 		id := r.URL.Query().Get("around")
 		a := "700"
 		if id == "9007199254740994" {
 			a = "701"
+		} else if id == "9007199254740997" {
+			a = "703"
 		}
 		m := strings.Replace(sampleMessage, "9007199254740993", id, 1)
-		m = strings.Replace(m, `"attachments":[]`, fmt.Sprintf(`"attachments":[{"id":%q,"filename":"image.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/%s/image.png"}]`, a, a), 1)
+		file := fmt.Sprintf(`{"id":%q,"filename":"image.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/%s/image.png"}`, a, a)
+		switch {
+		case id == "9007199254740995":
+			// A message without files is reported, not silently skipped.
+		case id == "9007199254740996":
+			// A malformed snapshot fails the message instead of hiding its files.
+			m = strings.TrimSuffix(m, "}") + `,"message_snapshots":[{"message":{"attachments":[` + file + `,{"id":702,"filename":"x.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/702/x.png"}]}}]}`
+		case id == "9007199254740997":
+			// A file listed directly and in a snapshot is downloaded once.
+			m = strings.TrimSuffix(strings.Replace(m, `"attachments":[]`, `"attachments":[`+file+`]`, 1), "}") + `,"message_snapshots":[{"message":{"attachments":[` + file + `]}}]}`
+		case a == "700":
+			// A forward keeps its files in the snapshot, not in attachments.
+			m = strings.TrimSuffix(m, "}") + `,"message_snapshots":[{"message":{"attachments":[` + file + `]}}]}`
+		default:
+			m = strings.Replace(m, `"attachments":[]`, `"attachments":[`+file+`]`, 1)
+		}
 		io.WriteString(w, "["+m+"]")
 	}), func(o *Options) {
 		o.DownloadTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -167,43 +184,57 @@ func TestBatchAttachmentManifest(t *testing.T) {
 			Path  string
 			Error *struct{ Code string }
 		}
-		Complete          bool
-		Succeeded, Failed int
+		Complete           bool
+		Succeeded, Failed  int
+		WithoutAttachments []string `json:"without_attachments"`
 	}
 	if code != 1 || !strings.Contains(errs, "partial_download") || json.Unmarshal([]byte(out), &result) != nil {
 		t.Fatalf("partial failure hidden: %d %s %s", code, out, errs)
 	}
-	// Duplicate message IDs are read once; one file succeeds and one reports its own error.
-	if reads != 2 || len(result.Items) != 2 || result.Complete || result.Succeeded != 1 || result.Failed != 1 {
+	// Duplicate message IDs are read once; each file or unreadable message reports its own result.
+	if reads != 5 || len(result.Items) != 4 || result.Complete || result.Succeeded != 2 || result.Failed != 2 || strings.Join(result.WithoutAttachments, ",") != "9007199254740995" {
 		t.Fatalf("wrong selection/coverage: %s reads=%d", out, reads)
 	}
+	var failures []string
 	for _, item := range result.Items {
 		if item.OK {
 			if b, err := os.ReadFile(item.Path); err != nil || string(b) != "hello" {
 				t.Fatalf("bad file: %q %v", b, err)
 			}
-		} else if item.Error == nil || item.Error.Code != "attachment_unavailable" {
-			t.Fatalf("missing per-file error: %s", out)
+		} else if item.Error != nil {
+			failures = append(failures, item.Error.Code)
 		}
+	}
+	if strings.Join(failures, ",") != "attachment_unavailable,invalid_upstream_data" {
+		t.Fatalf("missing per-file error: %s", out)
 	}
 }
 
 func TestDownloadFramingAndCeiling(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		length int64
-		body   string
-		exit   int
-		code   string
+		name      string
+		length    int64
+		body      string
+		exit      int
+		code      string
+		forwarded bool
 	}{
 		// Metadata can describe transformed bytes; the 3-byte size must not truncate the 5-byte original.
-		{"unknown length larger than metadata", -1, "hello", 0, ""},
-		{"oversized response", 1<<30 + 1, "", 1, "file_error"},
-		{"truncated response", 10, "hello", 1, "network_failure"},
+		{"unknown length larger than metadata", -1, "hello", 0, "", false},
+		{"oversized response", 1<<30 + 1, "", 1, "file_error", false},
+		{"truncated response", 10, "hello", 1, "network_failure", false},
+		{"forwarded attachment", 5, "hello", 0, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			code, out, errs := invoke(t, []string{"attachments", "download", "456", "9007199254740993", "700", "--dir", dir}, "", withAttachment(`{"id":"700","filename":"image.png","size":3,"content_type":"image/webp","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}`), func(o *Options) {
+			file := `{"id":"700","filename":"image.png","size":3,"content_type":"image/webp","url":"https://cdn.discordapp.com/attachments/456/700/image.png"}`
+			handler := withAttachment(file)
+			if tc.forwarded {
+				handler = upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+					io.WriteString(w, "["+strings.TrimSuffix(sampleMessage, "}")+`,"message_snapshots":[{"message":{"attachments":[`+file+`]}}]}]`)
+				})
+			}
+			code, out, errs := invoke(t, []string{"attachments", "download", "456", "9007199254740993", "700", "--dir", dir}, "", handler, func(o *Options) {
 				o.DownloadTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body)), ContentLength: tc.length, Request: r}, nil
 				})

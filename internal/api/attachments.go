@@ -26,10 +26,11 @@ type DownloadResult struct {
 }
 
 type DownloadBatch struct {
-	Items     []DownloadResult `json:"items"`
-	Complete  bool             `json:"complete"`
-	Succeeded int              `json:"succeeded"`
-	Failed    int              `json:"failed"`
+	Items              []DownloadResult `json:"items"`
+	Complete           bool             `json:"complete"`
+	Succeeded          int              `json:"succeeded"`
+	Failed             int              `json:"failed"`
+	WithoutAttachments []string         `json:"without_attachments,omitempty"`
 }
 
 func SafeFilename(name string) bool {
@@ -62,10 +63,14 @@ func (c *Client) Download(ctx context.Context, channel, message, attachment, dir
 	if err != nil {
 		return nil, err
 	}
+	files, err := m.Files()
+	if err != nil {
+		return nil, err
+	}
 	var selected *Attachment
-	for i := range m.Attachments {
-		if m.Attachments[i].ID == attachment {
-			selected = &m.Attachments[i]
+	for i := range files {
+		if files[i].ID == attachment {
+			selected = &files[i]
 			break
 		}
 	}
@@ -187,7 +192,15 @@ func (c *Client) DownloadMany(ctx context.Context, channel string, messages []st
 			record(id, "", err)
 			continue
 		}
-		for _, a := range m.Attachments {
+		files, err := m.Files()
+		if err != nil {
+			record(id, "", err)
+			continue
+		}
+		if len(files) == 0 {
+			batch.WithoutAttachments = append(batch.WithoutAttachments, id)
+		}
+		for _, a := range files {
 			subdir := filepath.Join(id, a.ID)
 			if err := root.MkdirAll(subdir, 0700); err != nil {
 				record(id, a.ID, err)

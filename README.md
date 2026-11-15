@@ -264,7 +264,8 @@ discord reactions remove CHANNEL_ID MESSAGE_ID '👍'
 discord reactions remove CHANNEL_ID MESSAGE_ID 'party:EMOJI_ID' --user USER_ID
 ```
 
-Get attachment IDs from message metadata, then download a selected file:
+Get attachment IDs from message metadata, including a forwarded message's
+`message_snapshots`, then download a selected file:
 
 ```bash
 mkdir -p ./downloads
@@ -281,15 +282,17 @@ Use `--name report.pdf` to choose a simple filename. Completed downloads are
 published with an atomic hard link, so the destination filesystem must support
 hard links. For a large transfer, increase the total deadline with `--timeout 5m`.
 
-`download-many` selects every attachment in 1–100 explicit message IDs, deduplicates
-repeated messages, and saves files under `MESSAGE_ID/ATTACHMENT_ID/FILENAME` in
-the chosen directory. Its JSON manifest includes per-file `ok`, local `path`,
-actual `bytes`, and `error` when applicable, plus `succeeded`, `failed`, and
-`complete` totals. A missing message is a failed manifest entry. It continues
-after individual failures; existing files are retained. Partial batches print
-the manifest on stdout and a `partial_download` error on stderr with exit 1.
-Already completed files remain available. A channel/authentication failure
-before batch processing returns the normal error without a manifest.
+`download-many` selects every attachment, forwarded ones included, in 1–100
+explicit message IDs, deduplicates repeated messages, and saves files under
+`MESSAGE_ID/ATTACHMENT_ID/FILENAME` in the chosen directory. Its JSON manifest
+includes per-file `ok`, local `path`, actual `bytes`, and `error` when
+applicable, plus `succeeded`, `failed`, and `complete` totals. A missing message
+is a failed manifest entry; a message with no attachments is listed in
+`without_attachments`. It continues after individual failures; existing files
+are retained. Partial batches print the manifest on stdout and a
+`partial_download` error on stderr with exit 1. Already completed files remain
+available. A channel/authentication failure before batch processing returns the
+normal error without a manifest.
 
 ## Pagination
 

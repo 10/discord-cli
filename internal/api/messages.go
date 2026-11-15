@@ -72,6 +72,44 @@ type Message struct {
 	Thread           json.RawMessage `json:"thread,omitempty"`
 }
 
+// Files returns the message's attachments, then those of its forwarded
+// snapshots, once per attachment ID. Malformed snapshot attachments are an
+// upstream error rather than a message without files.
+func (m Message) Files() ([]Attachment, error) {
+	files := append([]Attachment(nil), m.Attachments...)
+	if len(m.MessageSnapshots) == 0 || string(m.MessageSnapshots) == "null" {
+		return files, nil
+	}
+	var snapshots []struct {
+		Message struct {
+			Attachments []Attachment `json:"attachments"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(m.MessageSnapshots, &snapshots) != nil {
+		return nil, Upstream()
+	}
+	seen := map[string]bool{}
+	for _, a := range files {
+		seen[a.ID] = true
+	}
+	for _, s := range snapshots {
+		for _, a := range s.Message.Attachments {
+			if !validAttachment(a) {
+				return nil, Upstream()
+			}
+			if !seen[a.ID] {
+				files = append(files, a)
+				seen[a.ID] = true
+			}
+		}
+	}
+	return files, nil
+}
+
+func validAttachment(a Attachment) bool {
+	return ID(a.ID) && a.Size >= 0 && a.Filename != "" && a.URL != ""
+}
+
 func validMessage(m Message) bool {
 	if !ID(m.ID) || !ID(m.ChannelID) || !ID(m.Author.ID) {
 		return false
@@ -80,7 +118,7 @@ func validMessage(m Message) bool {
 		return false
 	}
 	for _, a := range m.Attachments {
-		if !ID(a.ID) || a.Size < 0 || a.Filename == "" || a.URL == "" {
+		if !validAttachment(a) {
 			return false
 		}
 	}

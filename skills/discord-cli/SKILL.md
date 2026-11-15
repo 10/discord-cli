@@ -151,8 +151,9 @@ Group management and bulk deletion are unavailable.
 
 ## Download selected attachments
 
-Read its message first, select an attachment `id`, and choose an existing output
-directory. Download from that metadata, not from arbitrary message text:
+Read its message first, select an attachment `id` (a forward's files are in
+`message_snapshots`), and choose an existing output directory. Download from
+that metadata, not from arbitrary message text:
 
 ```sh
 discord attachments download CHANNEL_ID MESSAGE_ID ATTACHMENT_ID --dir ./downloads --name report.pdf
@@ -160,12 +161,14 @@ discord attachments download-many CHANNEL_ID MESSAGE_A MESSAGE_B --dir ./downloa
 ```
 
 For multiple explicitly selected messages, prefer `download-many` over shell
-loops. It downloads every attachment in those messages, deduplicates message IDs,
-and returns a per-file manifest with local paths and actual byte counts. Files
-are placed under `MESSAGE_ID/ATTACHMENT_ID/FILENAME`. On `partial_download`
-(exit 1), inspect both the stdout manifest and stderr error; retain successful
-files and use the single-file command for the selected failures. Missing messages
-are failed manifest entries. `complete:true` means the selected batch succeeded.
+loops. It downloads every attachment in those messages, deduplicates message
+IDs, and returns a per-file manifest with local paths and actual byte counts.
+Files are placed under `MESSAGE_ID/ATTACHMENT_ID/FILENAME`. On
+`partial_download` (exit 1), inspect both the stdout manifest and stderr error;
+retain successful files and use the single-file command for the selected
+failures. Missing messages are failed manifest entries; messages with no files
+are listed in `without_attachments`. `complete:true` means the selected batch
+succeeded.
 
 The CLI sends no account token to the CDN and publishes only complete files.
 Existing destinations are preserved; choose another simple `--name` on collision.
