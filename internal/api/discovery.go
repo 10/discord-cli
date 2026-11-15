@@ -65,7 +65,7 @@ func lessID(a, b string) bool {
 func validChannel(v Channel) bool {
 	return ID(v.ID) && v.Type != nil && (v.ServerID == "" || ID(v.ServerID))
 }
-func (c *Client) Channels(server string, private bool) (any, error) {
+func (c *Client) Channels(server string, private, recent bool) (any, error) {
 	path := "/guilds/" + server + "/channels"
 	if private {
 		path = "/users/@me/channels"
@@ -85,10 +85,21 @@ func (c *Client) Channels(server string, private bool) (any, error) {
 		}
 	}
 	sort.Slice(items, func(i, j int) bool { return lessID(items[i].ID, items[j].ID) })
+	order := "id_ascending"
+	if recent {
+		order = "last_message_id_descending"
+		last := func(v Channel) string {
+			if v.LastMessageID == nil {
+				return ""
+			}
+			return *v.LastMessageID
+		}
+		sort.SliceStable(items, func(i, j int) bool { return lessID(last(items[j]), last(items[i])) })
+	}
 	if items == nil {
 		items = []Channel{}
 	}
-	return Page{Items: items, Complete: true, Order: "id_ascending"}, nil
+	return Page{Items: items, Complete: true, Order: order}, nil
 }
 func (c *Client) Channel(id string) (*Channel, error) {
 	var v Channel

@@ -164,6 +164,27 @@ func TestExactDMTarget(t *testing.T) {
 	}
 }
 
+func TestRecentDMs(t *testing.T) {
+	code, out, errs := invoke(t, []string{"dms", "list", "--sort", "recent"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `[{"id":"301","type":1,"last_message_id":null},{"id":"302","type":3,"last_message_id":"999999999999999999"},{"id":"303","type":1,"last_message_id":"1300000000000000000"},{"id":"300","type":1}]`)
+	}), nil)
+	var result struct {
+		Items []struct{ ID string }
+		Order string
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &result) != nil || result.Order != "last_message_id_descending" {
+		t.Fatalf("%d %s %s", code, out, errs)
+	}
+	var ids []string
+	for _, item := range result.Items {
+		ids = append(ids, item.ID)
+	}
+	// Longer IDs are newer; conversations without messages keep ascending IDs last.
+	if strings.Join(ids, ",") != "303,302,300,301" {
+		t.Fatalf("not latest message first: %s", out)
+	}
+}
+
 const sampleMessage = `{"id":"9007199254740993","channel_id":"456","author":{"id":"111","username":"owner"},"content":"hello","timestamp":"2026-09-15T00:00:00Z","attachments":[],"reactions":[],"referenced_message":null}`
 
 func TestNotFoundNamesTheMissingID(t *testing.T) {
