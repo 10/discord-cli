@@ -194,7 +194,7 @@ func withCode(details map[string]any, data []byte) map[string]any {
 	var body struct {
 		Code *int `json:"code"`
 	}
-	if _ = json.Unmarshal(data, &body); body.Code != nil {
+	if json.Unmarshal(data, &body) == nil && body.Code != nil {
 		details["discord_code"] = *body.Code
 	}
 	return details

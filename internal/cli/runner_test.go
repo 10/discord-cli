@@ -366,7 +366,7 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 		status, exit int
 		code, body   string
 	}{
-		{400, 2, "bad_request", `{"message":"synthetic.token.signature","code":0}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30,"code":20028}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {403, 3, "permission_denied", `{"message":"Cannot send messages to this user","code":50007}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
+		{400, 2, "bad_request", `{"message":"synthetic.token.signature","code":0}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30,"code":20028}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {403, 3, "permission_denied", `{"message":"Cannot send messages to this user","code":50007}`}, {403, 3, "permission_denied", `{"code":"unexpected"}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
 	} {
 		t.Run(fmt.Sprint(tc.status)+tc.code, func(t *testing.T) {
 			calls := 0
@@ -379,8 +379,12 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 			if code != tc.exit || out != "" || !strings.Contains(errs, `"code":"`+tc.code+`"`) || strings.Contains(errs, "signature") || calls != 1 {
 				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
 			}
+			// Only a numeric code is reported; a malformed one is left out.
 			var body struct{ Code *int }
-			if json.Unmarshal([]byte(tc.body), &body); (body.Code != nil && !strings.Contains(errs, fmt.Sprintf(`"discord_code":%d`, *body.Code))) || strings.Contains(errs, "Cannot send") {
+			if json.Unmarshal([]byte(tc.body), &body) != nil {
+				body.Code = nil
+			}
+			if (body.Code == nil) == strings.Contains(errs, "discord_code") || (body.Code != nil && !strings.Contains(errs, fmt.Sprintf(`"discord_code":%d`, *body.Code))) || strings.Contains(errs, "Cannot send") {
 				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
 			}
 		})
