@@ -174,7 +174,7 @@ func (c *Client) Message(channel, message string) (*Message, error) {
 		return nil, err
 	}
 	if len(items) != 1 || items[0].ID != message {
-		return nil, HTTPFailure(404)
+		return nil, notFound("This channel has no message with this ID; it may have been deleted")
 	}
 	return &items[0], nil
 }

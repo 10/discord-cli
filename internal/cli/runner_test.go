@@ -52,7 +52,10 @@ func TestInvalidInputsDoNotReadCredentials(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--token", "a-secret"}, "invalid_arguments"},
+		{[]string{"--token", "a-secret"}, "unknown flag;"},
+		{[]string{"messages", "list", "456", "--format", "a-secret"}, `--format must be one of \"json\",\"transcript\"; use discord messages list --help`},
+		{[]string{"messages", "lst", "a-secret"}, `unexpected argument; did you mean one of \"list\"`},
+		{[]string{"messages", `lst, did you mean "a-secret"?`}, "unexpected argument; use discord messages --help"},
 		{[]string{"attachments", "download", "456", "789", "--dir", t.TempDir()}, "discord attachments download --help"},
 		{[]string{"threads", "archived", "456", "--type", "joined-private", "--before", "2026-09-14T00:00:00Z"}, "invalid_arguments"},
 		{[]string{"messages", "search", "--server", "123", "--pinned=false"}, "does not reliably exclude pinned"},
@@ -163,13 +166,23 @@ func TestExactDMTarget(t *testing.T) {
 
 const sampleMessage = `{"id":"9007199254740993","channel_id":"456","author":{"id":"111","username":"owner"},"content":"hello","timestamp":"2026-09-15T00:00:00Z","attachments":[],"reactions":[],"referenced_message":null}`
 
-func TestExactMessageRejectsNeighbor(t *testing.T) {
-	// Discord's around query returns nearby messages when the requested one is gone.
-	code, out, errs := invoke(t, []string{"messages", "get", "456", "9007199254740994"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "["+sampleMessage+"]")
-	}), nil)
-	if code != 4 || out != "" || !strings.Contains(errs, "not_found") {
-		t.Fatalf("%d %s %s", code, out, errs)
+func TestNotFoundNamesTheMissingID(t *testing.T) {
+	for _, tc := range []struct{ channel, want string }{
+		// Discord's around query returns nearby messages when the requested one is gone.
+		{"456", "no message with this ID"},
+		{"123", `not a server or message ID","status":404,"details":{"discord_code":10003}`},
+	} {
+		code, out, errs := invoke(t, []string{"messages", "get", tc.channel, "9007199254740994"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/channels/123" {
+				w.WriteHeader(404)
+				io.WriteString(w, `{"message":"Unknown Channel","code":10003}`)
+				return
+			}
+			io.WriteString(w, "["+sampleMessage+"]")
+		}), nil)
+		if code != 4 || out != "" || !strings.Contains(errs, "not_found") || !strings.Contains(errs, tc.want) {
+			t.Fatalf("%d %s %s", code, out, errs)
+		}
 	}
 }
 
@@ -353,7 +366,7 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 		status, exit int
 		code, body   string
 	}{
-		{400, 2, "bad_request", `{"message":"synthetic.token.signature"}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
+		{400, 2, "bad_request", `{"message":"synthetic.token.signature","code":0}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30,"code":20028}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {403, 3, "permission_denied", `{"message":"Cannot send messages to this user","code":50007}`}, {403, 3, "permission_denied", `{"code":"unexpected"}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
 	} {
 		t.Run(fmt.Sprint(tc.status)+tc.code, func(t *testing.T) {
 			calls := 0
@@ -366,20 +379,33 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 			if code != tc.exit || out != "" || !strings.Contains(errs, `"code":"`+tc.code+`"`) || strings.Contains(errs, "signature") || calls != 1 {
 				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
 			}
+			// Only a numeric code is reported; a malformed one is left out.
+			var body struct{ Code *int }
+			if json.Unmarshal([]byte(tc.body), &body) != nil {
+				body.Code = nil
+			}
+			if (body.Code == nil) == strings.Contains(errs, "discord_code") || (body.Code != nil && !strings.Contains(errs, fmt.Sprintf(`"discord_code":%d`, *body.Code))) || strings.Contains(errs, "Cannot send") {
+				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
+			}
 		})
 	}
 }
 
 func TestConfirmedRetriesAndLostSendResponse(t *testing.T) {
-	for _, scenario := range []string{"rate limit", "lost send"} {
+	for _, scenario := range []string{"rate limit", "lost send", "failed send"} {
 		t.Run(scenario, func(t *testing.T) {
 			calls := 0
 			args := []string{"messages", "search", "--server", "123"}
-			if scenario == "lost send" {
+			if scenario != "rate limit" {
 				args = []string{"messages", "send", "456", "--content", "one send"}
 			}
 			code, out, errs := invoke(t, args, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
 				calls++
+				if scenario == "failed send" {
+					w.WriteHeader(500)
+					io.WriteString(w, `{"message":"500: Internal Server Error","code":0}`)
+					return
+				}
 				if scenario == "lost send" {
 					conn, _, e := w.(http.Hijacker).Hijack()
 					if e != nil {
@@ -395,7 +421,11 @@ func TestConfirmedRetriesAndLostSendResponse(t *testing.T) {
 				}
 				io.WriteString(w, `{"total_results":1,"messages":[[`+sampleMessage+`]],"is_indexed":true}`)
 			}), nil)
-			if scenario == "lost send" {
+			if scenario == "failed send" {
+				if code != 1 || calls != 1 || !strings.Contains(errs, "uncertain_write") || !strings.Contains(errs, `"discord_code":0`) || strings.Contains(errs, "Internal Server") {
+					t.Fatalf("%d %d %s %s", code, calls, out, errs)
+				}
+			} else if scenario == "lost send" {
 				if code != 1 || calls != 1 || !strings.Contains(errs, "uncertain_write") {
 					t.Fatalf("%d %d %s %s", code, calls, out, errs)
 				}

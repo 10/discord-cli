@@ -324,8 +324,10 @@ an exhaustive snapshot; deduplicate by message ID when combining pages.
 ## Output and recovery
 
 Errors use `{"error":{"code":"...","message":"..."}}` on stderr, with
-`status`, `retry_after` (seconds), and `details` when useful. Help and version
-output are text.
+`status`, `retry_after` (seconds), and `details` when useful. When Discord
+returns a JSON error code, `details.discord_code` carries it, for example 50013
+(missing permissions) or 50007 (the recipient does not accept your DMs). Help
+and version output are text.
 
 | Exit | Meaning |
 | --- | --- |
@@ -344,7 +346,8 @@ Stable runtime codes include `authentication_failed`, `ambiguous_account`,
 `partial_download`.
 
 Argument errors include a command-specific help pointer and, where available,
-usage and missing argument/flag names. Diagnostics omit supplied argument values.
+usage, missing argument/flag names, allowed values, and suggested command or
+flag names. Diagnostics omit supplied argument values.
 
 The default total deadline is 60 seconds, including authentication and transfers.
 Explicit rate limits and indexing delays get at most five attempts within that

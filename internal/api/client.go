@@ -133,7 +133,7 @@ func (c *Client) Request(method, path string, body Body, to any, creating bool) 
 				wait.RetryAfter = 1
 			}
 			failure.RetryAfter = wait.RetryAfter
-			failure.Details = map[string]any{"request": path, "complete": false}
+			failure.Details = withCode(map[string]any{"request": path, "complete": false}, data)
 			delay := time.Duration(wait.RetryAfter * float64(time.Second))
 			if delay <= 0 {
 				return failure
@@ -152,7 +152,9 @@ func (c *Client) Request(method, path string, body Body, to any, creating bool) 
 		}
 		if status < 200 || status >= 300 {
 			if creating && status >= 500 {
-				return uncertain(status, path)
+				failure := uncertain(status, path)
+				withCode(failure.Details.(map[string]any), data)
+				return failure
 			}
 			failure := HTTPFailure(status)
 			var challenge struct {
@@ -160,6 +162,9 @@ func (c *Client) Request(method, path string, body Body, to any, creating bool) 
 				Code       int             `json:"code"`
 			}
 			_ = json.Unmarshal(data, &challenge)
+			if details := withCode(map[string]any{}, data); len(details) > 0 {
+				failure.Details = details
+			}
 			if len(challenge.CaptchaKey) > 0 || challenge.Code == 40002 || challenge.Code == 60003 {
 				failure.Code = "user_action_required"
 				failure.Message = "Complete Discord's verification or authentication challenge in the desktop app; no automatic retry was made"
@@ -179,8 +184,20 @@ func (c *Client) Request(method, path string, body Body, to any, creating bool) 
 	}
 	return Upstream()
 }
-func uncertain(status int, path string) error {
-	return &Error{Code: "uncertain_write", Message: "The write may have succeeded; inspect the destination before resending", Status: status, Details: map[string]string{"request": path}}
+func uncertain(status int, path string) *Error {
+	return &Error{Code: "uncertain_write", Message: "The write may have succeeded; inspect the destination before resending", Status: status, Details: map[string]any{"request": path}}
+}
+
+// withCode adds Discord's numeric error code from a response body to details,
+// leaving out the body's message text.
+func withCode(details map[string]any, data []byte) map[string]any {
+	var body struct {
+		Code *int `json:"code"`
+	}
+	if json.Unmarshal(data, &body) == nil && body.Code != nil {
+		details["discord_code"] = *body.Code
+	}
+	return details
 }
 
 type User struct {

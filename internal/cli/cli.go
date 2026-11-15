@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 	}
 	// Parser diagnostics may contain arbitrary arguments, including accidentally pasted tokens.
 	if err != nil {
-		return report(stderr, argumentError(err))
+		return report(stderr, argumentError(err, parser.Model.Node))
 	}
 	if root.Timeout <= 0 {
 		return report(stderr, api.Invalid("--timeout must be positive"))
@@ -130,10 +131,10 @@ func version() string {
 	return "dev"
 }
 
-func argumentError(err error) error {
+func argumentError(err error, model *kong.Node) error {
 	var domain *api.Error
 	errors.As(err, &domain)
-	failure := &api.Error{Code: "invalid_arguments", Message: "invalid command or arguments; use --help for command syntax"}
+	failure := &api.Error{Code: "invalid_arguments", Message: problem(err, model) + "; use --help for command syntax"}
 	var parsed *kong.ParseError
 	if !errors.As(err, &parsed) || parsed.Context == nil || parsed.Context.Selected() == nil {
 		if domain != nil {
@@ -168,7 +169,7 @@ func argumentError(err error) error {
 		}
 	}
 	help := command + " --help"
-	failure.Message = "invalid command or arguments; use " + help
+	failure.Message = problem(err, model) + "; use " + help
 	if len(missing) > 0 {
 		failure.Message = fmt.Sprintf("missing required arguments: %s; use %s", strings.Join(missing, " "), help)
 	}
@@ -184,6 +185,57 @@ func argumentError(err error) error {
 	}
 	return failure
 }
+
+var suggestion = regexp.MustCompile(`, (did you mean (?:one of )?"-{0,2}[a-z][a-z-]*"(?:, "-{0,2}[a-z][a-z-]*")*)\?$`)
+var quotedName = regexp.MustCompile(`"([^"]*)"`)
+
+// problem keeps only the parser's command, flag, and enum names; supplied
+// values are dropped.
+func problem(err error, model *kong.Node) string {
+	message := err.Error()
+	for _, kind := range []string{"unknown flag", "unexpected argument"} {
+		if strings.HasPrefix(message, kind+" ") {
+			if match := suggestion.FindStringSubmatch(message); match != nil && known(model, match[1]) {
+				return kind + "; " + match[1]
+			}
+			return kind
+		}
+	}
+	if expected, _, found := strings.Cut(message, " but got "); found && strings.HasPrefix(expected, "--") {
+		return expected
+	}
+	if strings.HasPrefix(message, "expected one of ") {
+		return message
+	}
+	return "invalid command or arguments"
+}
+
+// known reports whether every quoted suggestion is a flag or command in the
+// model, so a supplied value shaped like a suggestion is never repeated.
+func known(model *kong.Node, suggested string) bool {
+	names := map[string]bool{}
+	var walk func(*kong.Node)
+	walk = func(n *kong.Node) {
+		for _, f := range n.Flags {
+			names["--"+f.Name] = true
+			if f.Short != 0 {
+				names["-"+string(f.Short)] = true
+			}
+		}
+		for _, c := range n.Children {
+			names[c.Name] = true
+			walk(c)
+		}
+	}
+	walk(model)
+	for _, quoted := range quotedName.FindAllStringSubmatch(suggested, -1) {
+		if !names[quoted[1]] {
+			return false
+		}
+	}
+	return true
+}
+
 func report(w io.Writer, err error, secrets ...string) int {
 	var e *api.Error
 	if !errors.As(err, &e) {

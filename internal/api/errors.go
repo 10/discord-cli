@@ -57,6 +57,11 @@ func RequireIDs(ids ...string) error {
 func Confirmation(operation, channel, message string) any {
 	return map[string]any{"ok": true, "operation": operation, "channel_id": channel, "message_id": message}
 }
+func notFound(message string) *Error {
+	e := HTTPFailure(404)
+	e.Message = message
+	return e
+}
 func HTTPFailure(status int) *Error {
 	e := &Error{Code: "upstream_error", Message: fmt.Sprintf("Discord returned HTTP %d", status), Status: status}
 	switch status {
