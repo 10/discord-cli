@@ -148,6 +148,17 @@ func (o MessageOutput) print(ctx *Context, value any) error {
 				text(field.name+": ", string(field.value))
 			}
 		}
+		if len(m.Reactions) > 0 {
+			counts := make([]string, len(m.Reactions))
+			for i, r := range m.Reactions {
+				emoji := r.Emoji.Name
+				if r.Emoji.ID != nil {
+					emoji += ":" + *r.Emoji.ID
+				}
+				counts[i] = fmt.Sprintf("%s %d", emoji, r.Count)
+			}
+			text("reactions: ", strings.Join(counts, ", "))
+		}
 		out.WriteByte('\n')
 	}
 	encoded, err := json.Marshal(metadata)
