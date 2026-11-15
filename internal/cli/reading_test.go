@@ -122,6 +122,20 @@ func TestMessageTranscripts(t *testing.T) {
 	}
 }
 
+func TestTranscriptQuotesEachOriginalOnce(t *testing.T) {
+	reply := func(id, original, text string) string {
+		return strings.TrimSuffix(strings.Replace(sampleMessage, "9007199254740993", id, 1), "}") + fmt.Sprintf(`,"type":19,"message_reference":{"message_id":%q},"referenced_message":{"id":%q,"channel_id":"456","author":{"id":"222","username":"asker"},"content":%q,"timestamp":"2026-09-14T00:00:00Z"}}`, original, original, text)
+	}
+	anchor := strings.Replace(sampleMessage, "9007199254740993", "1001", 1)
+	code, out, errs := invoke(t, []string{"messages", "list", "456", "--format", "transcript"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "["+strings.Join([]string{reply("1004", "900", "older"), reply("1003", "900", "older"), reply("1002", "1001", "hello"), anchor}, ",")+"]")
+	}), nil)
+	// The original of 1002 is in the window, and 1004 repeats 1003's original.
+	if code != 0 || errs != "" || strings.Count(out, "  > ") != 2 || strings.Count(out, "  > older") != 1 {
+		t.Fatalf("%d %s %s", code, out, errs)
+	}
+}
+
 func TestBatchAttachmentManifest(t *testing.T) {
 	dir := t.TempDir()
 	reads := 0
