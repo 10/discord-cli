@@ -324,8 +324,10 @@ an exhaustive snapshot; deduplicate by message ID when combining pages.
 ## Output and recovery
 
 Errors use `{"error":{"code":"...","message":"..."}}` on stderr, with
-`status`, `retry_after` (seconds), and `details` when useful. Help and version
-output are text.
+`status`, `retry_after` (seconds), and `details` when useful. When Discord
+returns a JSON error code, `details.discord_code` carries it, for example 50013
+(missing permissions) or 50007 (the recipient does not accept your DMs). Help
+and version output are text.
 
 | Exit | Meaning |
 | --- | --- |

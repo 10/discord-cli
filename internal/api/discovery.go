@@ -95,7 +95,7 @@ func (c *Client) Channel(id string) (*Channel, error) {
 	if err := c.Request("GET", "/channels/"+id, nil, &v, false); err != nil {
 		var e *Error
 		if errors.As(err, &e) && e.Code == "not_found" {
-			return nil, notFound("No channel with this ID is available; use a channel, thread, or DM ID, not a server or message ID")
+			e.Message = "No channel with this ID is available; use a channel, thread, or DM ID, not a server or message ID"
 		}
 		return nil, err
 	}

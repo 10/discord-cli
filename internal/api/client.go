@@ -160,6 +160,9 @@ func (c *Client) Request(method, path string, body Body, to any, creating bool) 
 				Code       int             `json:"code"`
 			}
 			_ = json.Unmarshal(data, &challenge)
+			if challenge.Code != 0 {
+				failure.Details = map[string]int{"discord_code": challenge.Code}
+			}
 			if len(challenge.CaptchaKey) > 0 || challenge.Code == 40002 || challenge.Code == 60003 {
 				failure.Code = "user_action_required"
 				failure.Message = "Complete Discord's verification or authentication challenge in the desktop app; no automatic retry was made"

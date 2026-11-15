@@ -170,7 +170,7 @@ func TestNotFoundNamesTheMissingID(t *testing.T) {
 	for _, tc := range []struct{ channel, want string }{
 		// Discord's around query returns nearby messages when the requested one is gone.
 		{"456", "no message with this ID"},
-		{"123", "not a server or message ID"},
+		{"123", `not a server or message ID","status":404,"details":{"discord_code":10003}`},
 	} {
 		code, out, errs := invoke(t, []string{"messages", "get", tc.channel, "9007199254740994"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/channels/123" {
@@ -366,7 +366,7 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 		status, exit int
 		code, body   string
 	}{
-		{400, 2, "bad_request", `{"message":"synthetic.token.signature"}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
+		{400, 2, "bad_request", `{"message":"synthetic.token.signature"}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {403, 3, "permission_denied", `{"message":"Cannot send messages to this user","code":50007}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
 	} {
 		t.Run(fmt.Sprint(tc.status)+tc.code, func(t *testing.T) {
 			calls := 0
@@ -377,6 +377,9 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 				io.WriteString(w, tc.body)
 			}), nil)
 			if code != tc.exit || out != "" || !strings.Contains(errs, `"code":"`+tc.code+`"`) || strings.Contains(errs, "signature") || calls != 1 {
+				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
+			}
+			if strings.Contains(tc.body, "50007") && (!strings.Contains(errs, `"discord_code":50007`) || strings.Contains(errs, "Cannot send")) {
 				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
 			}
 		})
