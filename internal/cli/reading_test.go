@@ -139,7 +139,7 @@ func TestTranscriptQuotesEachOriginalOnce(t *testing.T) {
 func TestBatchAttachmentManifest(t *testing.T) {
 	dir := t.TempDir()
 	reads := 0
-	code, out, errs := invoke(t, []string{"attachments", "download-many", "456", "9007199254740993", "9007199254740994", "9007199254740993", "--dir", dir}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+	code, out, errs := invoke(t, []string{"attachments", "download-many", "456", "9007199254740993", "9007199254740994", "9007199254740993", "9007199254740995", "--dir", dir}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
 		reads++
 		id := r.URL.Query().Get("around")
 		a := "700"
@@ -148,10 +148,13 @@ func TestBatchAttachmentManifest(t *testing.T) {
 		}
 		m := strings.Replace(sampleMessage, "9007199254740993", id, 1)
 		file := fmt.Sprintf(`{"id":%q,"filename":"image.png","size":3,"url":"https://cdn.discordapp.com/attachments/456/%s/image.png"}`, a, a)
-		if a == "700" {
+		switch {
+		case id == "9007199254740995":
+			// A message without files is reported, not silently skipped.
+		case a == "700":
 			// A forward keeps its files in the snapshot, not in attachments.
 			m = strings.TrimSuffix(m, "}") + `,"message_snapshots":[{"message":{"attachments":[` + file + `]}}]}`
-		} else {
+		default:
 			m = strings.Replace(m, `"attachments":[]`, `"attachments":[`+file+`]`, 1)
 		}
 		io.WriteString(w, "["+m+"]")
@@ -173,14 +176,15 @@ func TestBatchAttachmentManifest(t *testing.T) {
 			Path  string
 			Error *struct{ Code string }
 		}
-		Complete          bool
-		Succeeded, Failed int
+		Complete           bool
+		Succeeded, Failed  int
+		WithoutAttachments []string `json:"without_attachments"`
 	}
 	if code != 1 || !strings.Contains(errs, "partial_download") || json.Unmarshal([]byte(out), &result) != nil {
 		t.Fatalf("partial failure hidden: %d %s %s", code, out, errs)
 	}
 	// Duplicate message IDs are read once; one file succeeds and one reports its own error.
-	if reads != 2 || len(result.Items) != 2 || result.Complete || result.Succeeded != 1 || result.Failed != 1 {
+	if reads != 3 || len(result.Items) != 2 || result.Complete || result.Succeeded != 1 || result.Failed != 1 || strings.Join(result.WithoutAttachments, ",") != "9007199254740995" {
 		t.Fatalf("wrong selection/coverage: %s reads=%d", out, reads)
 	}
 	for _, item := range result.Items {

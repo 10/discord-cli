@@ -287,8 +287,9 @@ explicit message IDs, deduplicates repeated messages, and saves files under
 `MESSAGE_ID/ATTACHMENT_ID/FILENAME` in the chosen directory. Its JSON manifest
 includes per-file `ok`, local `path`, actual `bytes`, and `error` when
 applicable, plus `succeeded`, `failed`, and `complete` totals. A missing message
-is a failed manifest entry. It continues after individual failures; existing
-files are retained. Partial batches print the manifest on stdout and a
+is a failed manifest entry; a message with no attachments is listed in
+`without_attachments`. It continues after individual failures; existing files
+are retained. Partial batches print the manifest on stdout and a
 `partial_download` error on stderr with exit 1. Already completed files remain
 available. A channel/authentication failure before batch processing returns the
 normal error without a manifest.

@@ -26,10 +26,11 @@ type DownloadResult struct {
 }
 
 type DownloadBatch struct {
-	Items     []DownloadResult `json:"items"`
-	Complete  bool             `json:"complete"`
-	Succeeded int              `json:"succeeded"`
-	Failed    int              `json:"failed"`
+	Items              []DownloadResult `json:"items"`
+	Complete           bool             `json:"complete"`
+	Succeeded          int              `json:"succeeded"`
+	Failed             int              `json:"failed"`
+	WithoutAttachments []string         `json:"without_attachments,omitempty"`
 }
 
 func SafeFilename(name string) bool {
@@ -188,7 +189,11 @@ func (c *Client) DownloadMany(ctx context.Context, channel string, messages []st
 			record(id, "", err)
 			continue
 		}
-		for _, a := range m.Files() {
+		files := m.Files()
+		if len(files) == 0 {
+			batch.WithoutAttachments = append(batch.WithoutAttachments, id)
+		}
+		for _, a := range files {
 			if !ID(a.ID) {
 				record(id, "", Upstream())
 				continue
