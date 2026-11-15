@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -76,7 +77,7 @@ type Options struct {
 func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, opts Options) int {
 	var root Root
 	exited := -1
-	parser, err := kong.New(&root, kong.Name("discord"), kong.Description("Bounded Discord account operations as JSON."), kong.Vars{"version": "discord dev"}, kong.Writers(stdout, io.Discard), kong.Exit(func(code int) { exited = code }))
+	parser, err := kong.New(&root, kong.Name("discord"), kong.Description("Bounded Discord account operations as JSON."), kong.Vars{"version": "discord " + version()}, kong.Writers(stdout, io.Discard), kong.Exit(func(code int) { exited = code }))
 	if err != nil {
 		return report(stderr, err)
 	}
@@ -120,6 +121,13 @@ func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 		returnCode = report(stderr, err, c.Secrets...)
 	}
 	return returnCode
+}
+
+func version() string {
+	if b, ok := debug.ReadBuildInfo(); ok && b.Main.Version != "" && b.Main.Version != "(devel)" {
+		return b.Main.Version
+	}
+	return "dev"
 }
 
 func argumentError(err error) error {
