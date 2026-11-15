@@ -297,3 +297,31 @@ func TestHistoryInternalRequestCeiling(t *testing.T) {
 		t.Fatalf("unbounded or misleading read: %d %s %s requests=%d", code, out, errs, calls)
 	}
 }
+
+func TestRecentMentions(t *testing.T) {
+	query := ""
+	code, out, errs := invoke(t, []string{"messages", "mentions", "--limit", "2", "--direct", "--server", "123", "--before", "1400"}, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/users/@me/mentions" {
+			t.Errorf("unexpected request %s", r.URL)
+		}
+		query = r.URL.RawQuery
+		older := strings.NewReplacer("9007199254740993", "1300", `"channel_id":"456"`, `"channel_id":"457"`).Replace(sampleMessage)
+		newer := strings.Replace(sampleMessage, "9007199254740993", "1301", 1)
+		io.WriteString(w, "["+older+","+newer+"]")
+	}), nil)
+	var result struct {
+		Items []struct {
+			ID      string
+			Channel string `json:"channel_id"`
+		}
+		HasMore bool   `json:"has_more"`
+		Before  string `json:"next_before"`
+	}
+	if code != 0 || errs != "" || json.Unmarshal([]byte(out), &result) != nil || query != "before=1400&everyone=false&guild_id=123&limit=2&roles=false" {
+		t.Fatalf("%d %s %s query=%s", code, out, errs, query)
+	}
+	// Mentions span channels; each keeps its own channel ID for follow-up reads.
+	if len(result.Items) != 2 || result.Items[0].ID != "1301" || result.Items[1].Channel != "457" || !result.HasMore || result.Before != "1300" {
+		t.Fatalf("wrong order or continuation: %s", out)
+	}
+}

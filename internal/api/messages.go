@@ -223,6 +223,38 @@ func (c *Client) GetMessage(channel, message string) (any, error) {
 	return c.Message(channel, message)
 }
 
+// Mentions reads one page of Discord's recent-mentions inbox, which spans about a week.
+func (c *Client) Mentions(limit int, before, server string, direct bool) (any, error) {
+	q := url.Values{"limit": {strconv.Itoa(limit)}, "roles": {strconv.FormatBool(!direct)}, "everyone": {strconv.FormatBool(!direct)}}
+	if before != "" {
+		q.Set("before", before)
+	}
+	if server != "" {
+		q.Set("guild_id", server)
+	}
+	var items []Message
+	if err := c.Request("GET", "/users/@me/mentions?"+q.Encode(), nil, &items, false); err != nil {
+		return nil, err
+	}
+	if len(items) > limit {
+		return nil, Upstream()
+	}
+	for _, m := range items {
+		if !validMessage(m) || (before != "" && !lessID(m.ID, before)) {
+			return nil, Upstream()
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return lessID(items[j].ID, items[i].ID) })
+	if items == nil {
+		items = []Message{}
+	}
+	p := Page{Items: items, HasMore: len(items) == limit, Complete: true, Order: "newest_first"}
+	if p.HasMore {
+		p.NextBefore = items[len(items)-1].ID
+	}
+	return p, nil
+}
+
 const MaxSearchOffset = 9975
 
 type SearchOptions struct {
