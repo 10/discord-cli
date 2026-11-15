@@ -14,8 +14,9 @@ nor a checkout is available, install with
 `go install github.com/10/discord-cli/cmd/discord@latest` (Go 1.26.3 or later).
 
 Run `discord --help` and the selected command's `--help` for exact arguments
-and limits. Help/version need no account. If installed help differs from the
-checkout, rebuild before concluding that a command is unavailable.
+and limits. Help/version need no account; `--version` names the build's module
+version and commit. If installed help differs from the checkout, rebuild before
+concluding that a command is unavailable.
 
 ## Resolve the account and destination
 

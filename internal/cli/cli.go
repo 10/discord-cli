@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -18,26 +19,26 @@ import (
 )
 
 type Root struct {
-	Attachments AttachmentsCmd `cmd:"" help:"Explicitly download attachments without forwarding credentials."`
-	Reactions   ReactionsCmd   `cmd:"" help:"Inspect, add, and remove message reactions."`
+	Auth        AuthCmd        `cmd:"" help:"Inspect identity or manage an optional token override."`
 	Servers     ServersCmd     `cmd:"" help:"Discover accessible servers."`
 	Channels    ChannelsCmd    `cmd:"" help:"Discover server channels."`
 	Threads     ThreadsCmd     `cmd:"" help:"Discover active threads and paginated archives, including forum posts."`
 	Dms         DMsCmd         `cmd:"" help:"Discover private conversations or open an explicit DM."`
 	Friends     FriendsCmd     `cmd:"" help:"Discover friends and their user IDs."`
+	Messages    MessagesCmd    `cmd:"" help:"Read, search, and act on messages by explicit IDs."`
+	Reactions   ReactionsCmd   `cmd:"" help:"Inspect, add, and remove message reactions."`
+	Attachments AttachmentsCmd `cmd:"" help:"Explicitly download attachments without forwarding credentials."`
 
-	Version  kong.VersionFlag `help:"Print version without authentication."`
-	Timeout  time.Duration    `default:"60s" help:"Total command deadline, including authentication and transfers."`
-	Auth     AuthCmd          `cmd:"" help:"Inspect identity or manage an optional token override."`
-	Messages MessagesCmd      `cmd:"" help:"Read, search, and act on messages by explicit IDs."`
+	Version kong.VersionFlag `help:"Print version without authentication."`
+	Timeout time.Duration    `default:"60s" help:"Total command deadline, including authentication and transfers."`
 }
 type MessagesCmd struct {
+	List   MessageListCmd   `cmd:"" help:"Read up to --limit messages, newest first; fetch additional pages automatically."`
+	Get    MessageGetCmd    `cmd:"" help:"Read exactly one message."`
+	Search MessageSearchCmd `cmd:"" help:"Search exactly one server or conversation; inspect complete and has_more."`
+	Send   MessageSendCmd   `cmd:"" help:"Send text, a reply, or explicit files."`
 	Edit   MessageEditCmd   `cmd:"" help:"Edit own message text or explicitly add/remove attachments."`
 	Delete MessageDeleteCmd `cmd:"" help:"Delete a message where Discord permits; no confirmation prompt."`
-	List   MessageListCmd   `cmd:"" help:"Read up to --limit messages, newest first; fetch additional pages automatically."`
-	Search MessageSearchCmd `cmd:"" help:"Search exactly one server or conversation; inspect complete and has_more."`
-	Get    MessageGetCmd    `cmd:"" help:"Read exactly one message."`
-	Send   MessageSendCmd   `cmd:"" help:"Send text, a reply, or explicit files."`
 }
 type Context struct {
 	DownloadTransport   http.RoundTripper
@@ -76,7 +77,7 @@ type Options struct {
 func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, opts Options) int {
 	var root Root
 	exited := -1
-	parser, err := kong.New(&root, kong.Name("discord"), kong.Description("Bounded Discord account operations as JSON."), kong.Vars{"version": "discord dev"}, kong.Writers(stdout, io.Discard), kong.Exit(func(code int) { exited = code }))
+	parser, err := kong.New(&root, kong.Name("discord"), kong.Description("Bounded Discord account operations as JSON."), kong.Vars{"version": "discord " + version()}, kong.Writers(stdout, io.Discard), kong.Exit(func(code int) { exited = code }))
 	if err != nil {
 		return report(stderr, err)
 	}
@@ -120,6 +121,13 @@ func Run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 		returnCode = report(stderr, err, c.Secrets...)
 	}
 	return returnCode
+}
+
+func version() string {
+	if b, ok := debug.ReadBuildInfo(); ok && b.Main.Version != "" && b.Main.Version != "(devel)" {
+		return b.Main.Version
+	}
+	return "dev"
 }
 
 func argumentError(err error) error {
