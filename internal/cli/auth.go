@@ -11,9 +11,9 @@ import (
 )
 
 type AuthCmd struct {
+	Status     AuthStatusCmd     `cmd:"" help:"Show resolved account identity and credential source."`
 	SetToken   AuthSetTokenCmd   `cmd:"" help:"Validate and save a token read from stdin or a hidden terminal prompt."`
 	ClearToken AuthClearTokenCmd `cmd:"" help:"Remove only the saved override; no Discord access."`
-	Status     AuthStatusCmd     `cmd:"" help:"Show resolved account identity and credential source."`
 }
 type AuthStatusCmd struct{}
 
