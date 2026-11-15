@@ -366,7 +366,7 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 		status, exit int
 		code, body   string
 	}{
-		{400, 2, "bad_request", `{"message":"synthetic.token.signature"}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {403, 3, "permission_denied", `{"message":"Cannot send messages to this user","code":50007}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
+		{400, 2, "bad_request", `{"message":"synthetic.token.signature","code":0}`}, {401, 3, "authentication_failed", `{}`}, {404, 4, "not_found", `{}`}, {429, 5, "rate_limited", `{"retry_after":30,"code":20028}`}, {302, 1, "upstream_error", `{}`}, {400, 3, "user_action_required", `{"captcha_key":["required"]}`}, {403, 3, "permission_denied", `{"message":"Cannot send messages to this user","code":50007}`}, {200, 1, "invalid_upstream_data", `{"id":9007199254740993}`},
 	} {
 		t.Run(fmt.Sprint(tc.status)+tc.code, func(t *testing.T) {
 			calls := 0
@@ -379,7 +379,8 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 			if code != tc.exit || out != "" || !strings.Contains(errs, `"code":"`+tc.code+`"`) || strings.Contains(errs, "signature") || calls != 1 {
 				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
 			}
-			if strings.Contains(tc.body, "50007") && (!strings.Contains(errs, `"discord_code":50007`) || strings.Contains(errs, "Cannot send")) {
+			var body struct{ Code *int }
+			if json.Unmarshal([]byte(tc.body), &body); (body.Code != nil && !strings.Contains(errs, fmt.Sprintf(`"discord_code":%d`, *body.Code))) || strings.Contains(errs, "Cannot send") {
 				t.Fatalf("%d calls=%d %s %s", code, calls, out, errs)
 			}
 		})
@@ -387,15 +388,20 @@ func TestFailureContractsAndBoundedWaits(t *testing.T) {
 }
 
 func TestConfirmedRetriesAndLostSendResponse(t *testing.T) {
-	for _, scenario := range []string{"rate limit", "lost send"} {
+	for _, scenario := range []string{"rate limit", "lost send", "failed send"} {
 		t.Run(scenario, func(t *testing.T) {
 			calls := 0
 			args := []string{"messages", "search", "--server", "123"}
-			if scenario == "lost send" {
+			if scenario != "rate limit" {
 				args = []string{"messages", "send", "456", "--content", "one send"}
 			}
 			code, out, errs := invoke(t, args, "", upstream(dm, func(w http.ResponseWriter, r *http.Request) {
 				calls++
+				if scenario == "failed send" {
+					w.WriteHeader(500)
+					io.WriteString(w, `{"message":"500: Internal Server Error","code":0}`)
+					return
+				}
 				if scenario == "lost send" {
 					conn, _, e := w.(http.Hijacker).Hijack()
 					if e != nil {
@@ -411,7 +417,11 @@ func TestConfirmedRetriesAndLostSendResponse(t *testing.T) {
 				}
 				io.WriteString(w, `{"total_results":1,"messages":[[`+sampleMessage+`]],"is_indexed":true}`)
 			}), nil)
-			if scenario == "lost send" {
+			if scenario == "failed send" {
+				if code != 1 || calls != 1 || !strings.Contains(errs, "uncertain_write") || !strings.Contains(errs, `"discord_code":0`) || strings.Contains(errs, "Internal Server") {
+					t.Fatalf("%d %d %s %s", code, calls, out, errs)
+				}
+			} else if scenario == "lost send" {
 				if code != 1 || calls != 1 || !strings.Contains(errs, "uncertain_write") {
 					t.Fatalf("%d %d %s %s", code, calls, out, errs)
 				}
